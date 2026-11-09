@@ -1,18 +1,15 @@
-# projeto_diario
+# projeto_diario_classe
 
-A new Flutter project.
+Projeto realizado por alunos de Ciência da Computação (IFPA-Campus Tucuruí)
 
-## Getting Started
+Objetivo do programa é:
 
-This project is a starting point for a Flutter application.
+-Cadastro de múltiplas turmas.
+-Cadastro de alunos.
+-Lançamento e alteração de notas.
+-Cálculo de médias e recuperação.
+-Estatísticas e gráficos.
+-Salvamento local dos dados em JSON.
+-Exportação dos resultados em CSV.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
-# projeto-diario-classe
+<i class="devicon-dart-plain-wordmark"></i>
