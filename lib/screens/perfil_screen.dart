@@ -23,7 +23,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   );
 
   late final TextEditingController _mediaController = TextEditingController(
-    text: widget.professor.mediaMinima.toStringAsFixed(1).replaceAll('.', ','),
+    text: widget.professor.mediaMinima.toString().replaceAll('.', ','),
   );
 
   bool _salvando = false;
@@ -47,8 +47,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
     setState(() => _salvando = true);
 
     try {
-      widget.professor.editarPerfil(nome: nome, mediaMinima: media);
-      await ArmazenamentoService.salvarProfessor(widget.professor);
+      await ArmazenamentoService.alterarProfessor(
+        widget.professor,
+        () => widget.professor.editarPerfil(nome: nome, mediaMinima: media),
+      );
 
       if (!mounted) return;
 
@@ -155,28 +157,26 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   children: [
                     _RegraItem(
                       icone: Icons.calculate_rounded,
-                      titulo: 'Média das avaliações',
+                      titulo: 'Média semestral',
                       descricao:
-                          'Média simples de todas as avaliações do bimestre. '
-                          'A média fica pendente até todas serem lançadas.',
+                          'Média = (Prova 1 + Prova 2) ÷ 2. '
+                          'A média fica pendente até as duas provas serem lançadas.',
                     ),
                     const SizedBox(height: 14),
                     _RegraItem(
                       icone: Icons.tune_rounded,
-                      titulo: 'Avaliações personalizadas',
-                      descricao:
-                          'Cada turma e bimestre pode ter provas, trabalhos e '
-                          'testes com nomes próprios.',
+                      titulo: 'Uma prova por bimestre',
+                      descricao: 'O primeiro bimestre possui a Prova 1 e o segundo a Prova 2.',
                     ),
                     const SizedBox(height: 14),
                     _RegraItem(
                       icone: Icons.restore_rounded,
-                      titulo: 'Com recuperação',
+                      titulo: 'Prova final',
                       descricao:
-                          'Se a média das avaliações ficar abaixo de '
+                          'Se a média semestral ficar abaixo de '
                           '${formatarNotaTexto(widget.professor.mediaMinima)}, '
-                          'a recuperação entra na média: '
-                          '(média das avaliações + recuperação) ÷ 2.',
+                          'a prova final entra no cálculo: '
+                          '(média semestral + prova final) ÷ 2.',
                     ),
                     const SizedBox(height: 14),
                     _RegraItem(

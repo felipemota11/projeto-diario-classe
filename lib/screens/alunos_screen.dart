@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/aluno.dart';
-import '../models/bimestre.dart';
 import '../models/professor.dart';
 import '../models/turma.dart';
 import '../services/armazenamento_service.dart';
+import '../widgets/salvar_alteracao.dart';
 import '../services/calculo_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
@@ -117,33 +118,32 @@ class _AlunosScreenState extends State<AlunosScreen> {
                   TextFormField(
                     controller: nomeController,
                     textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.name,
                     textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
                       labelText: 'Nome completo',
+                      helperText: 'Apenas letras e espaços.',
                     ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Informe o nome do aluno.';
-                      }
-
-                      return null;
-                    },
+                    validator: Aluno.validarNome,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: matriculaController,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(labelText: 'Matrícula'),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Matrícula',
+                      helperText: 'Apenas números.',
+                    ),
                     validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Informe a matrícula.';
-                      }
+                      final erro = Aluno.validarMatricula(value);
+                      if (erro != null) return erro;
 
                       final existe = _turma.alunos.asMap().entries.any(
                         (item) =>
                             item.key != indice &&
-                            item.value.matricula.toLowerCase() ==
-                                value.trim().toLowerCase(),
+                            item.value.matricula == value!.trim(),
                       );
 
                       if (existe) {
@@ -213,8 +213,10 @@ class _AlunosScreenState extends State<AlunosScreen> {
     _sincronizarTurma();
 
     try {
-      _turma.adicionarAluno(aluno);
-      await ArmazenamentoService.salvarProfessor(widget.professor);
+      await ArmazenamentoService.alterarProfessor(
+        widget.professor,
+        () => _turma.adicionarAluno(aluno),
+      );
 
       if (!mounted) return;
 
@@ -236,14 +238,15 @@ class _AlunosScreenState extends State<AlunosScreen> {
     if (indice >= _turma.alunos.length) return;
 
     try {
-      _turma.editarAluno(
-        indice,
-        nome: aluno.nome,
-        matricula: aluno.matricula,
-        observacao: aluno.observacao,
+      await ArmazenamentoService.alterarProfessor(
+        widget.professor,
+        () => _turma.editarAluno(
+          indice,
+          nome: aluno.nome,
+          matricula: aluno.matricula,
+          observacao: aluno.observacao,
+        ),
       );
-
-      await ArmazenamentoService.salvarProfessor(widget.professor);
 
       if (!mounted) return;
 
@@ -266,7 +269,7 @@ class _AlunosScreenState extends State<AlunosScreen> {
         return AlertDialog(
           title: const Text('Excluir aluno?'),
           content: Text(
-            '${aluno.nome} e todas as suas notas, recuperações e presenças '
+            '${aluno.nome} e todas as suas notas, provas finais e presenças '
             'serão removidos. Essa ação pode ser desfeita na próxima mensagem.',
           ),
           actions: [
@@ -275,7 +278,10 @@ class _AlunosScreenState extends State<AlunosScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Excluir'),
             ),
@@ -292,8 +298,13 @@ class _AlunosScreenState extends State<AlunosScreen> {
 
     final String backup = ArmazenamentoService.exportarJson(widget.professor);
 
-    _turma.removerAlunoNoIndice(indice);
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => _turma.removerAlunoNoIndice(indice),
+    )) {
+      return;
+    }
 
     if (!mounted) return;
 
@@ -313,8 +324,17 @@ class _AlunosScreenState extends State<AlunosScreen> {
                 backup,
               );
 
-              widget.professor.substituirPor(restaurado);
-              await ArmazenamentoService.salvarProfessor(widget.professor);
+              try {
+                await ArmazenamentoService.substituirProfessor(
+                  widget.professor,
+                  restaurado,
+                );
+              } catch (erro) {
+                if (mounted) {
+                  _mostrarMensagem('Não foi possível desfazer: $erro');
+                }
+                return;
+              }
 
               if (!mounted) return;
 
@@ -364,6 +384,18 @@ class _AlunosScreenState extends State<AlunosScreen> {
     setState(() {});
   }
 
+  /// Exibe a média do semestre, nunca a nota isolada do último bimestre.
+  double? _mediaSemestralAluno(int indiceAluno) {
+    final primeiro = _turma.primeiroBimestre;
+    final segundo = _turma.segundoBimestre;
+    return CalculoService.calcularMediaFinalSemestral(
+      primeiro,
+      segundo,
+      indiceAluno,
+      mediaMinima: widget.professor.mediaMinima,
+    );
+  }
+
   List<int> _indicesVisiveis() {
     final String termo = _buscaController.text.trim().toLowerCase();
 
@@ -380,10 +412,6 @@ class _AlunosScreenState extends State<AlunosScreen> {
       if (combina) indices.add(i);
     }
 
-    final Bimestre? ultimo = _turma.bimestres.isEmpty
-        ? null
-        : _turma.bimestres.last;
-
     indices.sort((a, b) {
       final Aluno alunoA = _turma.alunos[a];
       final Aluno alunoB = _turma.alunos[b];
@@ -398,20 +426,8 @@ class _AlunosScreenState extends State<AlunosScreen> {
             alunoB.matricula.toLowerCase(),
           );
         case _OrdenacaoAlunos.media:
-          final double? mediaA = ultimo == null
-              ? null
-              : CalculoService.calcularMedia(
-                  ultimo,
-                  a,
-                  mediaMinima: widget.professor.mediaMinima,
-                );
-          final double? mediaB = ultimo == null
-              ? null
-              : CalculoService.calcularMedia(
-                  ultimo,
-                  b,
-                  mediaMinima: widget.professor.mediaMinima,
-                );
+          final double? mediaA = _mediaSemestralAluno(a);
+          final double? mediaB = _mediaSemestralAluno(b);
 
           if (mediaA == null && mediaB == null) {
             return alunoA.nome.toLowerCase().compareTo(
@@ -435,9 +451,6 @@ class _AlunosScreenState extends State<AlunosScreen> {
 
     final List<int> indices = _indicesVisiveis();
     final bool temAlunos = _turma.alunos.isNotEmpty;
-    final Bimestre? ultimo = _turma.bimestres.isEmpty
-        ? null
-        : _turma.bimestres.last;
 
     return Scaffold(
       appBar: AppBar(
@@ -665,13 +678,7 @@ class _AlunosScreenState extends State<AlunosScreen> {
                       final int indice = indices[posicao];
                       final Aluno aluno = _turma.alunos[indice];
 
-                      final double? media = ultimo == null
-                          ? null
-                          : CalculoService.calcularMedia(
-                              ultimo,
-                              indice,
-                              mediaMinima: widget.professor.mediaMinima,
-                            );
+                      final double? media = _mediaSemestralAluno(indice);
 
                       final double? frequencia = _turma.percentualPresenca(
                         indice,
@@ -748,11 +755,7 @@ class _CartaoAluno extends StatelessWidget {
             width: 46,
             height: 46,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [tema.colorScheme.primary, tema.colorScheme.secondary],
-              ),
+              gradient: AppTheme.brandGradient,
               borderRadius: BorderRadius.circular(15),
             ),
             child: Center(
@@ -854,8 +857,8 @@ class _CartaoAluno extends StatelessWidget {
               }
             },
             itemBuilder: (context) {
-              return const [
-                PopupMenuItem(
+              return [
+                const PopupMenuItem(
                   value: _AcaoAluno.boletim,
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -863,7 +866,7 @@ class _CartaoAluno extends StatelessWidget {
                     title: Text('Boletim'),
                   ),
                 ),
-                PopupMenuItem(
+                const PopupMenuItem(
                   value: _AcaoAluno.editar,
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -877,11 +880,11 @@ class _CartaoAluno extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
                       Icons.delete_outline_rounded,
-                      color: AppTheme.danger,
+                      color: tema.colorScheme.error,
                     ),
                     title: Text(
                       'Excluir',
-                      style: TextStyle(color: AppTheme.danger),
+                      style: TextStyle(color: tema.colorScheme.error),
                     ),
                   ),
                 ),
@@ -907,6 +910,7 @@ class _MiniEtiqueta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cor = AppTheme.foreground(context, this.cor);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(

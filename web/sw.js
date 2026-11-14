@@ -6,7 +6,7 @@
  * - Navegações caem no index.html em cache.
  */
 
-const CACHE = 'diario-classe-v5';
+const CACHE = 'diario-classe-ifpa-v2';
 
 const ARQUIVOS_BASE = [
   './',
@@ -15,6 +15,7 @@ const ARQUIVOS_BASE = [
   './flutter_bootstrap.js',
   './main.dart.js',
   './favicon.png',
+  './favicon.png?v=2',
   './icons/Icon-192.png',
   './icons/Icon-512.png',
   './icons/Icon-maskable-192.png',
@@ -25,6 +26,9 @@ const ARQUIVOS_BASE = [
   './assets/FontManifest.json',
   './assets/fonts/MaterialIcons-Regular.otf',
   './assets/fonts/fallback/Roboto-Regular.ttf',
+  './assets/assets/fonts/Roboto-Regular.ttf',
+  './assets/assets/fonts/Roboto-Bold.ttf',
+  './assets/assets/images/icone_diario.png',
   './assets/packages/cupertino_icons/assets/CupertinoIcons.ttf',
   './assets/shaders/ink_sparkle.frag',
   './assets/shaders/stretch_effect.frag',
@@ -60,7 +64,7 @@ self.addEventListener('activate', (evento) => {
       .then((chaves) =>
         Promise.all(
           chaves
-            .filter((chave) => chave !== CACHE)
+            .filter((chave) => chave.startsWith('diario-classe-') && chave !== CACHE)
             .map((chave) => caches.delete(chave)),
         ),
       )

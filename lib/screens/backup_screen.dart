@@ -14,7 +14,15 @@ import '../widgets/app_widgets.dart';
 class BackupScreen extends StatefulWidget {
   final Professor professor;
 
-  const BackupScreen({super.key, required this.professor});
+  final String? erroAoCarregar;
+  final VoidCallback? aoRecuperar;
+
+  const BackupScreen({
+    super.key,
+    required this.professor,
+    this.erroAoCarregar,
+    this.aoRecuperar,
+  });
 
   @override
   State<BackupScreen> createState() => _BackupScreenState();
@@ -39,7 +47,16 @@ class _BackupScreenState extends State<BackupScreen> {
     setState(() => _ocupado = true);
 
     try {
-      final String json = ArmazenamentoService.exportarJson(widget.professor);
+      final String json;
+      if (widget.erroAoCarregar != null) {
+        final original = await ArmazenamentoService.obterJsonSalvo();
+        if (original == null) {
+          throw StateError('Nenhum arquivo salvo disponível para recuperação.');
+        }
+        json = original;
+      } else {
+        json = ArmazenamentoService.exportarJson(widget.professor);
+      }
 
       await ArquivoService.salvarTexto(
         nomeArquivo: _nomeArquivoBackup(),
@@ -76,6 +93,7 @@ class _BackupScreenState extends State<BackupScreen> {
             FilledButton(
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(dialogContext).colorScheme.error,
+                foregroundColor: Theme.of(dialogContext).colorScheme.onError,
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Apagar'),
@@ -85,15 +103,14 @@ class _BackupScreenState extends State<BackupScreen> {
       },
     );
 
-    if (confirmar != true) return;
+    if (confirmar != true || !mounted) return;
 
     setState(() => _ocupado = true);
 
     try {
-      await ArmazenamentoService.apagarDados();
-
-      // Mantém o nome e a média mínima configurados no perfil.
-      widget.professor.substituirPor(
+      // Persiste também o perfil mantido no novo diário.
+      await ArmazenamentoService.substituirProfessor(
+        widget.professor,
         Professor(
           nome: widget.professor.nome,
           mediaMinima: widget.professor.mediaMinima,
@@ -104,6 +121,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
       setState(() {});
       _mensagem('Todos os dados foram apagados.');
+      widget.aoRecuperar?.call();
     } catch (erro) {
       if (!mounted) return;
 
@@ -129,7 +147,7 @@ class _BackupScreenState extends State<BackupScreen> {
       }
 
       final String conteudo = utf8
-          .decode(await arquivo.readAsBytes(), allowMalformed: true)
+          .decode(await arquivo.readAsBytes())
           .replaceFirst('\uFEFF', '');
 
       final Professor importado = ArmazenamentoService.importarJson(conteudo);
@@ -171,14 +189,17 @@ class _BackupScreenState extends State<BackupScreen> {
         return;
       }
 
-      widget.professor.substituirPor(importado);
-      await ArmazenamentoService.salvarProfessor(widget.professor);
+      await ArmazenamentoService.substituirProfessor(
+        widget.professor,
+        importado,
+      );
 
       if (!mounted) return;
 
       setState(() {});
 
       _mensagem('Backup restaurado com sucesso!');
+      widget.aoRecuperar?.call();
     } catch (erro) {
       if (!mounted) return;
 
@@ -207,6 +228,19 @@ class _BackupScreenState extends State<BackupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (widget.erroAoCarregar != null) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '${widget.erroAoCarregar}\n\nOs dados originais estão protegidos. '
+                    'Exporte o arquivo para recuperação, restaure um backup semestral '
+                    'ou apague os dados para começar novamente.',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             if (_ocupado) ...[
               const LinearProgressIndicator(minHeight: 3),
               const SizedBox(height: 14),
@@ -222,17 +256,19 @@ class _BackupScreenState extends State<BackupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.cloud_done_rounded,
                         color: Colors.white,
                         size: 24,
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Text(
-                        'Tudo salvo no aparelho',
-                        style: TextStyle(
+                        widget.erroAoCarregar == null
+                            ? 'Tudo salvo no aparelho'
+                            : 'Leitura interrompida',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -302,7 +338,9 @@ class _BackupScreenState extends State<BackupScreen> {
                   ),
                   const SizedBox(height: 16),
                   GradientButton(
-                    label: 'Exportar backup',
+                    label: widget.erroAoCarregar == null
+                        ? 'Exportar backup'
+                        : 'Exportar arquivo original',
                     icon: Icons.file_download_rounded,
                     onPressed: _ocupado ? null : _exportar,
                   ),
@@ -395,7 +433,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     icon: const Icon(Icons.delete_outline_rounded, size: 19),
                     label: const Text('Apagar todos os dados'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.danger,
+                      foregroundColor: tema.colorScheme.error,
                       side: BorderSide(
                         color: AppTheme.danger.withValues(alpha: 0.40),
                       ),
@@ -413,9 +451,9 @@ class _BackupScreenState extends State<BackupScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.info_outline_rounded,
-                    color: AppTheme.info,
+                    color: AppTheme.foreground(context, AppTheme.info),
                     size: 20,
                   ),
                   const SizedBox(width: 10),

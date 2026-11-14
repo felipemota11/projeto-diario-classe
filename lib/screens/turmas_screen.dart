@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/professor.dart';
 import '../models/turma.dart';
 import '../services/armazenamento_service.dart';
+import '../widgets/salvar_alteracao.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_page_route.dart';
@@ -113,13 +114,13 @@ class _TurmasScreenState extends State<TurmasScreen> {
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
                       labelText: 'Período',
-                      hintText: 'Ex.: 1',
+                      hintText: 'De 1 a 10',
                     ),
                     validator: (value) {
                       final numero = int.tryParse(value?.trim() ?? '');
 
-                      if (numero == null || numero < 1) {
-                        return 'Informe um período válido.';
+                      if (numero == null || numero < 1 || numero > 10) {
+                        return 'Informe um período entre 1 e 10.';
                       }
 
                       return null;
@@ -192,8 +193,10 @@ class _TurmasScreenState extends State<TurmasScreen> {
     if (!mounted || turma == null) return;
 
     try {
-      widget.professor.adicionarTurma(turma);
-      await ArmazenamentoService.salvarProfessor(widget.professor);
+      await ArmazenamentoService.alterarProfessor(
+        widget.professor,
+        () => widget.professor.adicionarTurma(turma),
+      );
 
       if (!mounted) return;
 
@@ -213,9 +216,17 @@ class _TurmasScreenState extends State<TurmasScreen> {
 
     if (!mounted || dados == null) return;
 
-    turma.editar(nome: dados.nome, curso: dados.curso, periodo: dados.periodo);
-
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => turma.editar(
+        nome: dados.nome,
+        curso: dados.curso,
+        periodo: dados.periodo,
+      ),
+    )) {
+      return;
+    }
 
     if (!mounted) return;
 
@@ -224,9 +235,13 @@ class _TurmasScreenState extends State<TurmasScreen> {
   }
 
   Future<void> _alternarArquivamento(Turma turma) async {
-    turma.arquivada = !turma.arquivada;
-
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => turma.arquivada = !turma.arquivada,
+    )) {
+      return;
+    }
 
     if (!mounted) return;
 
@@ -246,8 +261,13 @@ class _TurmasScreenState extends State<TurmasScreen> {
           action: SnackBarAction(
             label: 'Desfazer',
             onPressed: () async {
-              turma.arquivada = !turma.arquivada;
-              await ArmazenamentoService.salvarProfessor(widget.professor);
+              if (!await salvarAlteracao(
+                context,
+                widget.professor,
+                () => turma.arquivada = !turma.arquivada,
+              )) {
+                return;
+              }
               if (mounted) setState(() {});
             },
           ),
@@ -271,7 +291,10 @@ class _TurmasScreenState extends State<TurmasScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppTheme.danger),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.danger,
+                foregroundColor: Colors.white,
+              ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Excluir'),
             ),
@@ -284,8 +307,13 @@ class _TurmasScreenState extends State<TurmasScreen> {
 
     final String backup = ArmazenamentoService.exportarJson(widget.professor);
 
-    widget.professor.turmas.remove(turma);
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => widget.professor.turmas.remove(turma),
+    )) {
+      return;
+    }
 
     if (!mounted) return;
 
@@ -305,8 +333,17 @@ class _TurmasScreenState extends State<TurmasScreen> {
                 backup,
               );
 
-              widget.professor.substituirPor(restaurado);
-              await ArmazenamentoService.salvarProfessor(widget.professor);
+              try {
+                await ArmazenamentoService.substituirProfessor(
+                  widget.professor,
+                  restaurado,
+                );
+              } catch (erro) {
+                if (mounted) {
+                  _mostrarMensagem('Não foi possível desfazer: $erro');
+                }
+                return;
+              }
 
               if (mounted) setState(() {});
             },
@@ -658,17 +695,17 @@ class _CartaoTurma extends StatelessWidget {
                     title: Text(turma.arquivada ? 'Desarquivar' : 'Arquivar'),
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: _AcaoTurma.excluir,
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(
                       Icons.delete_outline_rounded,
-                      color: AppTheme.danger,
+                      color: tema.colorScheme.error,
                     ),
                     title: Text(
                       'Excluir',
-                      style: TextStyle(color: AppTheme.danger),
+                      style: TextStyle(color: tema.colorScheme.error),
                     ),
                   ),
                 ),

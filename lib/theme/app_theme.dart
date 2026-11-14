@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+import 'app_palette.dart';
 
 /// Centraliza cores, tipografia, formas e sombras do aplicativo.
 ///
@@ -9,18 +10,19 @@ class AppTheme {
   const AppTheme._();
 
   // Cores de destaque da identidade visual.
-  static const Color primary = Color(0xFF5B4BFF);
-  static const Color secondary = Color(0xFF8B5CF6);
-  static const Color success = Color(0xFF16A34A);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFEF4444);
-  static const Color info = Color(0xFF0EA5E9);
+  static const Color brandGreen = Color(AppPalette.institutionalGreen);
+  static const Color primary = Color(AppPalette.primary);
+  static const Color secondary = Color(AppPalette.institutionalRed);
+  static const Color success = Color(AppPalette.greenMedium);
+  static const Color warning = Color(AppPalette.warning);
+  static const Color danger = Color(AppPalette.institutionalRed);
+  static const Color info = Color(AppPalette.info);
 
   // Superfícies de fundo e de cartão.
-  static const Color _lightBackground = Color(0xFFF5F6FB);
-  static const Color _lightSurface = Color(0xFFFFFFFF);
-  static const Color _darkBackground = Color(0xFF0B0D12);
-  static const Color _darkSurface = Color(0xFF171A22);
+  static const Color _lightBackground = Color(AppPalette.lightBackground);
+  static const Color _lightSurface = Color(AppPalette.lightSurface);
+  static const Color _darkBackground = Color(AppPalette.darkBackground);
+  static const Color _darkSurface = Color(AppPalette.darkSurface);
 
   /// Raio padrão de cartões e blocos.
   static const double radius = 20;
@@ -29,8 +31,15 @@ class AppTheme {
   static const LinearGradient brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [primary, secondary],
+    colors: [primary, success],
   );
+
+  /// Mantém cores de texto e ícones legíveis sobre superfícies escuras.
+  static Color foreground(BuildContext context, Color color) {
+    return Theme.of(context).brightness == Brightness.dark
+        ? Color.lerp(color, Colors.white, 0.48)!
+        : color;
+  }
 
   /// Tema claro.
   static ThemeData get light => _build(Brightness.light);
@@ -67,68 +76,106 @@ class AppTheme {
     final bool escuro = brilho == Brightness.dark;
 
     final ColorScheme scheme =
-        ColorScheme.fromSeed(seedColor: primary, brightness: brilho).copyWith(
-          primary: primary,
-          secondary: secondary,
-          tertiary: info,
-          error: danger,
+        ColorScheme.fromSeed(
+          seedColor: brandGreen,
+          brightness: brilho,
+        ).copyWith(
+          primary: escuro ? const Color(0xFF92DB9F) : primary,
+          onPrimary: escuro ? const Color(0xFF073914) : Colors.white,
+          primaryContainer: escuro
+              ? const Color(0xFF224B2C)
+              : const Color(0xFFDFF1DF),
+          onPrimaryContainer: escuro
+              ? const Color(0xFFDFF1DF)
+              : const Color(0xFF103B1C),
+          secondary: escuro ? const Color(0xFFFFB4B0) : secondary,
+          onSecondary: escuro ? const Color(0xFF690006) : Colors.white,
+          secondaryContainer: escuro
+              ? const Color(0xFF542526)
+              : const Color(0xFFFCE9E8),
+          onSecondaryContainer: escuro
+              ? const Color(0xFFFFDAD6)
+              : const Color(0xFF741216),
+          tertiary: escuro ? const Color(0xFFA4CFBA) : info,
+          error: escuro ? const Color(0xFFFFB4AB) : danger,
+          onError: escuro ? const Color(0xFF690005) : Colors.white,
           surface: escuro ? _darkSurface : _lightSurface,
+          onSurface: Color(escuro ? AppPalette.darkText : AppPalette.lightText),
+          onSurfaceVariant: Color(
+            escuro ? AppPalette.darkTextMuted : AppPalette.lightTextMuted,
+          ),
+          outline: Color(
+            escuro ? AppPalette.darkOutline : AppPalette.lightOutline,
+          ),
+          outlineVariant: Color(
+            escuro ? AppPalette.darkBorder : AppPalette.lightBorder,
+          ),
           surfaceContainerHighest: escuro
-              ? const Color(0xFF232734)
-              : const Color(0xFFEEF0F8),
+              ? const Color(AppPalette.darkContainer)
+              : const Color(AppPalette.lightContainer),
         );
 
     final Color background = escuro ? _darkBackground : _lightBackground;
 
-    // Tipografia: Poppins para títulos e Inter para o corpo.
+    // Fontes locais para funcionar sem conexão em todas as plataformas.
     final TextTheme baseTexto = ThemeData(brightness: brilho).textTheme;
 
-    final TextTheme texto = GoogleFonts.interTextTheme(baseTexto).copyWith(
-      displaySmall: GoogleFonts.poppins(
-        fontSize: 32,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.8,
-        color: scheme.onSurface,
-      ),
-      headlineMedium: GoogleFonts.poppins(
-        fontSize: 26,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.6,
-        color: scheme.onSurface,
-      ),
-      headlineSmall: GoogleFonts.poppins(
-        fontSize: 21,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.4,
-        color: scheme.onSurface,
-      ),
-      titleLarge: GoogleFonts.poppins(
-        fontSize: 19,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.3,
-        color: scheme.onSurface,
-      ),
-      titleMedium: GoogleFonts.inter(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: scheme.onSurface,
-      ),
-      bodyLarge: GoogleFonts.inter(
-        fontSize: 15,
-        height: 1.45,
-        color: scheme.onSurface,
-      ),
-      bodyMedium: GoogleFonts.inter(
-        fontSize: 14,
-        height: 1.45,
-        color: scheme.onSurfaceVariant,
-      ),
-      labelLarge: GoogleFonts.inter(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: scheme.onSurface,
-      ),
-    );
+    final TextTheme texto = baseTexto
+        .apply(fontFamily: 'DiarioRoboto')
+        .copyWith(
+          displaySmall: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 32,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.8,
+            color: scheme.onSurface,
+          ),
+          headlineMedium: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.6,
+            color: scheme.onSurface,
+          ),
+          headlineSmall: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+            color: scheme.onSurface,
+          ),
+          titleLarge: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 19,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.3,
+            color: scheme.onSurface,
+          ),
+          titleMedium: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface,
+          ),
+          bodyLarge: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 15,
+            height: 1.45,
+            color: scheme.onSurface,
+          ),
+          bodyMedium: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 14,
+            height: 1.45,
+            color: scheme.onSurfaceVariant,
+          ),
+          labelLarge: TextStyle(
+            fontFamily: 'DiarioRoboto',
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurface,
+          ),
+        );
 
     final OutlineInputBorder borda = OutlineInputBorder(
       borderRadius: BorderRadius.circular(16),
@@ -162,7 +209,8 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
         titleSpacing: 4,
-        titleTextStyle: GoogleFonts.poppins(
+        titleTextStyle: TextStyle(
+          fontFamily: 'DiarioRoboto',
           fontSize: 20,
           fontWeight: FontWeight.w600,
           letterSpacing: -0.3,
@@ -203,7 +251,8 @@ class AppTheme {
             borderRadius: BorderRadius.circular(16),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          textStyle: GoogleFonts.inter(
+          textStyle: TextStyle(
+            fontFamily: 'DiarioRoboto',
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -217,7 +266,8 @@ class AppTheme {
             borderRadius: BorderRadius.circular(16),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          textStyle: GoogleFonts.inter(
+          textStyle: TextStyle(
+            fontFamily: 'DiarioRoboto',
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -230,7 +280,8 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: GoogleFonts.inter(
+          textStyle: TextStyle(
+            fontFamily: 'DiarioRoboto',
             fontSize: 14,
             fontWeight: FontWeight.w600,
           ),
@@ -250,7 +301,8 @@ class AppTheme {
         backgroundColor: scheme.surfaceContainerHighest,
         side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
-        labelStyle: GoogleFonts.inter(
+        labelStyle: TextStyle(
+          fontFamily: 'DiarioRoboto',
           fontSize: 12,
           fontWeight: FontWeight.w600,
           color: scheme.onSurfaceVariant,
@@ -268,9 +320,13 @@ class AppTheme {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: escuro
-            ? const Color(0xFF2A2F3D)
-            : const Color(0xFF1F2430),
-        contentTextStyle: GoogleFonts.inter(color: Colors.white, fontSize: 14),
+            ? const Color(AppPalette.darkContainer)
+            : const Color(AppPalette.lightText),
+        contentTextStyle: TextStyle(
+          fontFamily: 'DiarioRoboto',
+          color: Colors.white,
+          fontSize: 14,
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         insetPadding: const EdgeInsets.all(16),
       ),
@@ -287,7 +343,11 @@ class AppTheme {
       ),
 
       dropdownMenuTheme: DropdownMenuThemeData(
-        textStyle: GoogleFonts.inter(fontSize: 15, color: scheme.onSurface),
+        textStyle: TextStyle(
+          fontFamily: 'DiarioRoboto',
+          fontSize: 15,
+          color: scheme.onSurface,
+        ),
         menuStyle: MenuStyle(
           backgroundColor: WidgetStatePropertyAll(scheme.surface),
           shape: WidgetStatePropertyAll(

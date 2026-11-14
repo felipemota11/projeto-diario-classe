@@ -11,7 +11,13 @@ class Turma {
   bool arquivada;
 
   final List<Aluno> alunos = [];
-  final List<Bimestre> bimestres = [];
+  final List<Bimestre> bimestres = List.unmodifiable([
+    Bimestre(numero: 1, quantidadeAlunos: 0),
+    Bimestre(numero: 2, quantidadeAlunos: 0),
+  ]);
+
+  Bimestre get primeiroBimestre => bimestres[0];
+  Bimestre get segundoBimestre => bimestres[1];
 
   /// Aulas registradas, com a presença de cada aluno.
   final List<RegistroPresenca> presencas = [];
@@ -22,8 +28,8 @@ class Turma {
     required this.periodo,
     this.arquivada = false,
   }) {
-    if (periodo < 1) {
-      throw ArgumentError('Período inválido.');
+    if (periodo < 1 || periodo > 10) {
+      throw ArgumentError('O período deve estar entre 1 e 10.');
     }
   }
 
@@ -33,8 +39,8 @@ class Turma {
     required String curso,
     required int periodo,
   }) {
-    if (periodo < 1) {
-      throw ArgumentError('Período inválido.');
+    if (periodo < 1 || periodo > 10) {
+      throw ArgumentError('O período deve estar entre 1 e 10.');
     }
 
     this.nome = nome;
@@ -77,11 +83,10 @@ class Turma {
     required String observacao,
   }) {
     _validarAluno(indice);
+    Aluno.validarCadastro(nome: nome, matricula: matricula);
 
     final existe = alunos.asMap().entries.any(
-      (item) =>
-          item.key != indice &&
-          item.value.matricula.toLowerCase() == matricula.toLowerCase(),
+      (item) => item.key != indice && item.value.matricula == matricula.trim(),
     );
 
     if (existe) {
@@ -110,31 +115,6 @@ class Turma {
     }
 
     alunos.removeAt(indice);
-  }
-
-  // Cria um novo bimestre. Os nomes das avaliações são opcionais para
-  // preservar os dados antigos e permitir a configuração por turma.
-  void adicionarBimestre(int numero, {List<String>? avaliacoes}) {
-    final existe = bimestres.any((b) => b.numero == numero);
-
-    if (existe) {
-      throw ArgumentError('Esse bimestre já foi cadastrado.');
-    }
-
-    bimestres.add(
-      Bimestre(
-        numero: numero,
-        quantidadeAlunos: alunos.length,
-        avaliacoes: avaliacoes,
-      ),
-    );
-
-    bimestres.sort((a, b) => a.numero.compareTo(b.numero));
-  }
-
-  // Exclui um bimestre e todas as notas lançadas nele.
-  void removerBimestre(int numero) {
-    bimestres.removeWhere((bimestre) => bimestre.numero == numero);
   }
 
   // Registra uma nova aula com todos os alunos presentes por padrão.

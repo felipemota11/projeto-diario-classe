@@ -1,16 +1,32 @@
-import 'dart:typed_data';
-
+import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import '../models/bimestre.dart';
 import '../models/professor.dart';
 import '../models/turma.dart';
+import '../theme/app_palette.dart';
 import 'arquivo_service.dart';
 import 'calculo_service.dart';
 
 /// Gera boletins e relatórios em PDF usando as mesmas regras da aplicação.
 class PdfService {
+  static pw.ThemeData? _tema;
+  static pw.MemoryImage? _icone;
+
+  static Future<pw.ThemeData> _carregarTema() async {
+    if (_tema != null) return _tema!;
+    final regular = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+    final negrito = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+    final icone = await rootBundle.load('assets/images/icone_diario.png');
+    _icone = pw.MemoryImage(
+      icone.buffer.asUint8List(icone.offsetInBytes, icone.lengthInBytes),
+    );
+    return _tema = pw.ThemeData.withFont(
+      base: pw.Font.ttf(regular),
+      bold: pw.Font.ttf(negrito),
+    );
+  }
+
   static String _formatar(double? valor) {
     if (valor == null) {
       return '—';
@@ -50,31 +66,10 @@ class PdfService {
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 18),
       padding: const pw.EdgeInsets.only(bottom: 10),
-      decoration: const pw.BoxDecoration(
-        border: pw.Border(
-          bottom: pw.BorderSide(color: PdfColor.fromInt(0xFFE2E5EF), width: 1),
-        ),
-      ),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.center,
         children: [
-          pw.Container(
-            width: 34,
-            height: 34,
-            alignment: pw.Alignment.center,
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#5B4BFF'),
-              borderRadius: pw.BorderRadius.circular(9),
-            ),
-            child: pw.Text(
-              'DC',
-              style: pw.TextStyle(
-                color: PdfColors.white,
-                fontSize: 13,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
+          pw.Image(_icone!, width: 34, height: 34, fit: pw.BoxFit.cover),
           pw.SizedBox(width: 10),
           pw.Expanded(
             child: pw.Column(
@@ -85,14 +80,14 @@ class PdfService {
                   style: pw.TextStyle(
                     fontSize: 16,
                     fontWeight: pw.FontWeight.bold,
-                    color: PdfColor.fromHex('#1F2430'),
+                    color: PdfColor.fromInt(AppPalette.lightText),
                   ),
                 ),
                 pw.Text(
                   subtitulo,
                   style: const pw.TextStyle(
                     fontSize: 9,
-                    color: PdfColor.fromInt(0xFF6B7280),
+                    color: PdfColor.fromInt(AppPalette.lightTextMuted),
                   ),
                 ),
               ],
@@ -113,14 +108,14 @@ class PdfService {
             'Diário de Classe • $nomeProfessor',
             style: const pw.TextStyle(
               fontSize: 8,
-              color: PdfColor.fromInt(0xFF9CA3AF),
+              color: PdfColor.fromInt(AppPalette.lightTextMuted),
             ),
           ),
           pw.Text(
             'Página ${context.pageNumber} de ${context.pagesCount}',
             style: const pw.TextStyle(
               fontSize: 8,
-              color: PdfColor.fromInt(0xFF9CA3AF),
+              color: PdfColor.fromInt(AppPalette.lightTextMuted),
             ),
           ),
         ],
@@ -136,362 +131,319 @@ class PdfService {
         style: pw.TextStyle(
           fontSize: 12,
           fontWeight: pw.FontWeight.bold,
-          color: PdfColor.fromHex('#1F2430'),
+          color: PdfColor.fromInt(AppPalette.lightText),
         ),
       ),
     );
   }
 
-  // Gera o PDF do boletim individual do aluno.
-  static Future<Uint8List> gerarBoletim({
+  // Boletim individual com a regra semestral, sem recuperação por bimestre.
+  static Future<Uint8List> gerarBoletimSemestral({
     required Professor professor,
     required Turma turma,
     required int indiceAluno,
   }) async {
-    final aluno = turma.alunos[indiceAluno];
-    final documento = pw.Document(title: 'Boletim - ${aluno.nome}');
-
-    final linhas = <List<String>>[];
-
-    for (final bimestre in turma.bimestres) {
-      final avaliacoes = <String>[];
-
-      for (int j = 0; j < bimestre.avaliacoes.length; j++) {
-        final lancada = bimestre.notasLancadas[indiceAluno][j];
-        final nota = lancada ? bimestre.notas[indiceAluno][j] : null;
-
-        avaliacoes.add('${bimestre.avaliacoes[j]}: ${_formatar(nota)}');
-      }
-
-      linhas.add([
-        '${bimestre.numero}º',
-        avaliacoes.join('\n'),
-        _formatar(bimestre.recuperacoes[indiceAluno]),
-        _formatar(
-          CalculoService.calcularMedia(
-            bimestre,
-            indiceAluno,
-            mediaMinima: professor.mediaMinima,
-          ),
-        ),
-        CalculoService.verificarSituacao(
-          bimestre,
-          indiceAluno,
-          mediaMinima: professor.mediaMinima,
-        ),
-      ]);
+    final semestre = (
+      primeiro: turma.primeiroBimestre,
+      segundo: turma.segundoBimestre,
+    );
+    if (indiceAluno < 0 || indiceAluno >= turma.alunos.length) {
+      throw RangeError('Aluno não encontrado.');
     }
 
+    final aluno = turma.alunos[indiceAluno];
+    final primeiro = semestre.primeiro;
+    final segundo = semestre.segundo;
+    final nota1 = primeiro.obterNota(indiceAluno);
+    final nota2 = segundo.obterNota(indiceAluno);
+    final media = CalculoService.calcularMediaSemestral(
+      primeiro,
+      segundo,
+      indiceAluno,
+    );
+    final precisaFinal = media != null && media < professor.mediaMinima;
+    final provaFinal = precisaFinal ? segundo.provasFinais[indiceAluno] : null;
+    final resultado = CalculoService.calcularMediaFinalSemestral(
+      primeiro,
+      segundo,
+      indiceAluno,
+      mediaMinima: professor.mediaMinima,
+    );
+    final situacao = CalculoService.verificarSituacaoSemestral(
+      primeiro,
+      segundo,
+      indiceAluno,
+      mediaMinima: professor.mediaMinima,
+    );
     final frequencia = turma.percentualPresenca(indiceAluno);
 
+    final documento = pw.Document(
+      title: 'Boletim semestral - ${aluno.nome}',
+      theme: await _carregarTema(),
+    );
     documento.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         header: (context) => _cabecalho(
-          titulo: 'Boletim do aluno',
+          titulo: 'Boletim semestral',
           subtitulo:
               '${turma.nome} • ${turma.curso} • ${turma.periodo}º período',
         ),
         footer: (context) => _rodape(context, professor.nome),
-        build: (context) {
-          return [
-            pw.Container(
-              padding: const pw.EdgeInsets.all(12),
-              decoration: pw.BoxDecoration(
-                color: PdfColor.fromHex('#F5F6FB'),
-                borderRadius: pw.BorderRadius.circular(8),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    aluno.nome,
-                    style: pw.TextStyle(
-                      fontSize: 17,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColor.fromHex('#1F2430'),
-                    ),
-                  ),
-                  pw.SizedBox(height: 3),
-                  pw.Text(
-                    'Matrícula: ${aluno.matricula}',
-                    style: const pw.TextStyle(
-                      fontSize: 10,
-                      color: PdfColor.fromInt(0xFF6B7280),
-                    ),
-                  ),
-                  pw.SizedBox(height: 8),
-                  pw.Row(
-                    children: [
-                      pw.Text(
-                        'Frequência: ${_percentual(frequencia)}',
-                        style: pw.TextStyle(
-                          fontSize: 10,
-                          fontWeight: pw.FontWeight.bold,
-                          color: PdfColor.fromHex('#5B4BFF'),
-                        ),
-                      ),
-                      pw.SizedBox(width: 18),
-                      pw.Text(
-                        'Média mínima: ${_formatar(professor.mediaMinima)}',
-                        style: const pw.TextStyle(
-                          fontSize: 10,
-                          color: PdfColor.fromInt(0xFF6B7280),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+        build: (context) => [
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.all(12),
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromInt(AppPalette.lightBackground),
+              borderRadius: pw.BorderRadius.circular(8),
             ),
-            _tituloSecao('Desempenho por bimestre'),
-            if (linhas.isEmpty)
-              pw.Text(
-                'Nenhum bimestre cadastrado.',
-                style: const pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColor.fromInt(0xFF6B7280),
-                ),
-              )
-            else
-              pw.TableHelper.fromTextArray(
-                headers: const [
-                  'Bimestre',
-                  'Avaliações',
-                  'Recuperação',
-                  'Média final',
-                  'Situação',
-                ],
-                data: linhas,
-                columnWidths: {
-                  0: pw.FlexColumnWidth(0.8),
-                  1: pw.FlexColumnWidth(3.2),
-                  2: pw.FlexColumnWidth(1.1),
-                  3: pw.FlexColumnWidth(1.0),
-                  4: pw.FlexColumnWidth(1.4),
-                },
-                headerStyle: pw.TextStyle(
-                  fontSize: 9,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColor.fromHex('#1F2430'),
-                ),
-                headerDecoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#EEF0F8'),
-                ),
-                cellStyle: const pw.TextStyle(
-                  fontSize: 9,
-                  color: PdfColor.fromInt(0xFF374151),
-                ),
-                cellAlignment: pw.Alignment.center,
-                cellAlignments: const {1: pw.Alignment.centerLeft},
-                headerAlignment: pw.Alignment.center,
-                cellPadding: const pw.EdgeInsets.symmetric(
-                  horizontal: 5,
-                  vertical: 7,
-                ),
-                border: const pw.TableBorder(
-                  horizontalInside: pw.BorderSide(
-                    color: PdfColor.fromInt(0xFFE5E7EB),
-                    width: 1,
-                  ),
-                  bottom: pw.BorderSide(
-                    color: PdfColor.fromInt(0xFFE5E7EB),
-                    width: 1,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  aluno.nome,
+                  style: pw.TextStyle(
+                    fontSize: 16,
+                    fontWeight: pw.FontWeight.bold,
                   ),
                 ),
-              ),
-            if (aluno.observacao.trim().isNotEmpty) ...[
-              _tituloSecao('Observações'),
-              pw.Container(
-                width: double.infinity,
-                padding: const pw.EdgeInsets.all(10),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#FFF8E7'),
-                  borderRadius: pw.BorderRadius.circular(6),
-                ),
-                child: pw.Text(
-                  aluno.observacao.trim(),
-                  style: const pw.TextStyle(
-                    fontSize: 9.5,
-                    color: PdfColor.fromInt(0xFF4B5563),
-                  ),
-                ),
-              ),
+                pw.SizedBox(height: 4),
+                pw.Text('Matrícula: ${aluno.matricula}'),
+                pw.Text('Frequência: ${_percentual(frequencia)}'),
+                pw.Text('Média mínima: ${_formatar(professor.mediaMinima)}'),
+              ],
+            ),
+          ),
+          _tituloSecao('Avaliações do semestre'),
+          pw.TableHelper.fromTextArray(
+            border: null,
+            headers: [
+              primeiro.nomeProva,
+              segundo.nomeProva,
+              'Média semestral',
+              'Prova final',
+              'Média final',
             ],
-            pw.SizedBox(height: 18),
-            pw.Text(
-              'Gerado em ${_dataAtual()} pelo Diário de Classe.',
-              style: const pw.TextStyle(
-                fontSize: 8,
-                color: PdfColor.fromInt(0xFF9CA3AF),
-              ),
+            data: [
+              [
+                _formatar(nota1),
+                _formatar(nota2),
+                _formatar(media),
+                _formatar(provaFinal),
+                _formatar(resultado),
+              ],
+            ],
+            headerStyle: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 9,
             ),
-          ];
-        },
+            cellStyle: const pw.TextStyle(fontSize: 9),
+            headerDecoration: pw.BoxDecoration(
+              color: PdfColor.fromInt(AppPalette.lightContainer),
+            ),
+            headerAlignment: pw.Alignment.center,
+            cellAlignment: pw.Alignment.center,
+            cellPadding: const pw.EdgeInsets.all(7),
+          ),
+          pw.SizedBox(height: 12),
+          pw.Text(
+            'Situação acadêmica: $situacao',
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Média semestral = (nota do 1º bimestre + nota do 2º bimestre) / 2.',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+          if (precisaFinal)
+            pw.Text(
+              'Média após prova final = (média semestral + prova final) / 2.',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          if (aluno.observacao.trim().isNotEmpty) ...[
+            _tituloSecao('Observações'),
+            pw.Text(
+              aluno.observacao.trim(),
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ],
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Gerado em ${_dataAtual()} pelo Diário de Classe.',
+            style: const pw.TextStyle(fontSize: 8),
+          ),
+        ],
       ),
     );
-
     return documento.save();
   }
 
-  // Gera o relatório completo de uma turma em um bimestre.
-  static Future<Uint8List> gerarRelatorioTurma({
+  // Relatório completo com uma prova em cada bimestre e prova final única.
+  static Future<Uint8List> gerarRelatorioSemestral({
     required Professor professor,
     required Turma turma,
-    required Bimestre bimestre,
   }) async {
-    final documento = pw.Document(
-      title: 'Relatório - ${turma.nome} - ${bimestre.numero}º bimestre',
+    final semestre = (
+      primeiro: turma.primeiroBimestre,
+      segundo: turma.segundoBimestre,
     );
-
+    final primeiro = semestre.primeiro;
+    final segundo = semestre.segundo;
+    final minima = professor.mediaMinima;
     final linhas = <List<String>>[];
+    int aprovados = 0;
+    int reprovados = 0;
+    int pendentes = 0;
+    int concluidos = 0;
+    double somaMedias = 0;
 
     for (int i = 0; i < turma.alunos.length; i++) {
       final aluno = turma.alunos[i];
+      final media = CalculoService.calcularMediaSemestral(primeiro, segundo, i);
+      final mediaFinal = CalculoService.calcularMediaFinalSemestral(
+        primeiro,
+        segundo,
+        i,
+        mediaMinima: minima,
+      );
+      final situacao = CalculoService.verificarSituacaoSemestral(
+        primeiro,
+        segundo,
+        i,
+        mediaMinima: minima,
+      );
+      final provaFinal = media != null && media < minima
+          ? segundo.provasFinais[i]
+          : null;
 
-      final notas = List<String>.generate(bimestre.avaliacoes.length, (j) {
-        final lancada = bimestre.notasLancadas[i][j];
-
-        return _formatar(lancada ? bimestre.notas[i][j] : null);
-      });
+      if (situacao.startsWith('Aprovado')) {
+        aprovados++;
+      } else if (situacao == 'Reprovado') {
+        reprovados++;
+      } else {
+        pendentes++;
+      }
+      if (mediaFinal != null) {
+        somaMedias += mediaFinal;
+        concluidos++;
+      }
 
       linhas.add([
         aluno.matricula,
         aluno.nome,
-        ...notas,
-        _formatar(bimestre.recuperacoes[i]),
-        _formatar(
-          CalculoService.calcularMedia(
-            bimestre,
-            i,
-            mediaMinima: professor.mediaMinima,
-          ),
-        ),
-        CalculoService.verificarSituacao(
-          bimestre,
-          i,
-          mediaMinima: professor.mediaMinima,
-        ),
+        _formatar(primeiro.obterNota(i)),
+        _formatar(segundo.obterNota(i)),
+        _formatar(media),
+        _formatar(provaFinal),
+        _formatar(mediaFinal),
+        situacao,
         _percentual(turma.percentualPresenca(i)),
       ]);
     }
 
-    final mediaGeral = CalculoService.calcularMediaGeral(
-      bimestre,
-      mediaMinima: professor.mediaMinima,
+    final documento = pw.Document(
+      title: 'Relatório semestral - ${turma.nome}',
+      theme: await _carregarTema(),
     );
-
-    final aprovados = CalculoService.calcularPercentualAprovados(
-      bimestre,
-      mediaMinima: professor.mediaMinima,
-    );
-
-    final double tamanhoFonte = bimestre.avaliacoes.length > 6 ? 7.5 : 8.5;
-
+    final mediaGeral = concluidos == 0 ? null : somaMedias / concluidos;
+    final percentual = concluidos == 0 ? null : (aprovados / concluidos) * 100;
     documento.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(28),
+        margin: const pw.EdgeInsets.all(27),
         header: (context) => _cabecalho(
-          titulo: 'Relatório da turma',
+          titulo: 'Relatório semestral da turma',
           subtitulo:
-              '${turma.nome} • ${turma.curso} • '
-              '${bimestre.numero}º bimestre',
+              '${turma.nome} • ${turma.curso} • ${turma.periodo}º período',
         ),
         footer: (context) => _rodape(context, professor.nome),
-        build: (context) {
-          return [
-            pw.Row(
-              children: [
-                _resumo('Média geral', _formatar(mediaGeral)),
-                pw.SizedBox(width: 14),
-                _resumo(
-                  'Aprovados',
-                  aprovados == null ? '—' : _percentual(aprovados),
-                ),
-                pw.SizedBox(width: 14),
-                _resumo('Alunos', turma.alunos.length.toString()),
-                pw.SizedBox(width: 14),
-                _resumo('Média mínima', _formatar(professor.mediaMinima)),
+        build: (context) => [
+          pw.Row(
+            children: [
+              _resumo('Média final geral', _formatar(mediaGeral)),
+              pw.SizedBox(width: 10),
+              _resumo('Aprovados', aprovados.toString()),
+              pw.SizedBox(width: 10),
+              _resumo('Pendentes', pendentes.toString()),
+              pw.SizedBox(width: 10),
+              _resumo('Reprovados', reprovados.toString()),
+            ],
+          ),
+          pw.SizedBox(height: 9),
+          pw.Text(
+            'Aprovação entre alunos com resultado concluído: '
+            '${_percentual(percentual)} • Média mínima: ${_formatar(minima)}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+          _tituloSecao('Notas e situação acadêmica'),
+          if (linhas.isEmpty)
+            pw.Text('Nenhum aluno cadastrado.')
+          else
+            pw.TableHelper.fromTextArray(
+              border: null,
+              headers: [
+                'Matrícula',
+                'Aluno',
+                'B1',
+                'B2',
+                'Média',
+                'Prova final',
+                'Média final',
+                'Situação',
+                'Frequência',
               ],
-            ),
-            _tituloSecao('Notas e situação'),
-            if (linhas.isEmpty)
-              pw.Text(
-                'Nenhum aluno cadastrado.',
-                style: const pw.TextStyle(
-                  fontSize: 10,
-                  color: PdfColor.fromInt(0xFF6B7280),
-                ),
-              )
-            else
-              pw.TableHelper.fromTextArray(
-                headers: [
-                  'Matrícula',
-                  'Aluno',
-                  ...bimestre.avaliacoes,
-                  'Recuperação',
-                  'Média final',
-                  'Situação',
-                  'Frequência',
-                ],
-                data: linhas,
-                columnWidths: {
-                  0: pw.FlexColumnWidth(1.1),
-                  1: pw.FlexColumnWidth(2.6),
-                  for (int j = 0; j < bimestre.avaliacoes.length; j++)
-                    (j + 2): pw.FlexColumnWidth(0.8),
-                  (bimestre.avaliacoes.length + 2): pw.FlexColumnWidth(1.0),
-                  (bimestre.avaliacoes.length + 3): pw.FlexColumnWidth(0.9),
-                  (bimestre.avaliacoes.length + 4): pw.FlexColumnWidth(1.3),
-                },
-                headerStyle: pw.TextStyle(
-                  fontSize: tamanhoFonte,
-                  fontWeight: pw.FontWeight.bold,
-                  color: PdfColor.fromHex('#1F2430'),
-                ),
-                headerDecoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('#EEF0F8'),
-                ),
-                cellStyle: pw.TextStyle(
-                  fontSize: tamanhoFonte,
-                  color: const PdfColor.fromInt(0xFF374151),
-                ),
-                cellAlignments: const {
-                  0: pw.Alignment.centerLeft,
-                  1: pw.Alignment.centerLeft,
-                },
-                headerAlignment: pw.Alignment.center,
-                cellPadding: const pw.EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 6,
-                ),
-                border: const pw.TableBorder(
-                  horizontalInside: pw.BorderSide(
-                    color: PdfColor.fromInt(0xFFE5E7EB),
-                    width: 1,
-                  ),
-                  bottom: pw.BorderSide(
-                    color: PdfColor.fromInt(0xFFE5E7EB),
-                    width: 1,
-                  ),
-                ),
-              ),
-            pw.SizedBox(height: 14),
-            pw.Text(
-              'Gerado em ${_dataAtual()} pelo Diário de Classe.',
-              style: const pw.TextStyle(
+              data: linhas,
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1.15),
+                1: const pw.FlexColumnWidth(2.2),
+                2: const pw.FlexColumnWidth(.6),
+                3: const pw.FlexColumnWidth(.6),
+                4: const pw.FlexColumnWidth(.7),
+                5: const pw.FlexColumnWidth(.85),
+                6: const pw.FlexColumnWidth(.8),
+                7: const pw.FlexColumnWidth(1.65),
+                8: const pw.FlexColumnWidth(.85),
+              },
+              headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
                 fontSize: 8,
-                color: PdfColor.fromInt(0xFF9CA3AF),
+              ),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              headerDecoration: pw.BoxDecoration(
+                color: PdfColor.fromInt(AppPalette.lightContainer),
+              ),
+              headerAlignment: pw.Alignment.center,
+              cellPadding: const pw.EdgeInsets.symmetric(
+                horizontal: 4,
+                vertical: 7,
               ),
             ),
-          ];
-        },
+          pw.SizedBox(height: 14),
+          pw.Text(
+            'Gerado em ${_dataAtual()} pelo Diário de Classe. '
+            'Semestre composto por dois bimestres e uma única prova final, se necessária.',
+            style: const pw.TextStyle(fontSize: 8),
+          ),
+        ],
       ),
     );
-
     return documento.save();
+  }
+
+  static Future<void> exportarRelatorioSemestral({
+    required Professor professor,
+    required Turma turma,
+  }) async {
+    final bytes = await gerarRelatorioSemestral(
+      professor: professor,
+      turma: turma,
+    );
+    await ArquivoService.salvarBytes(
+      nomeArquivo: 'relatorio_semestral_${_slug(turma.nome)}.pdf',
+      bytes: bytes,
+    );
   }
 
   static pw.Widget _resumo(String titulo, String valor) {
@@ -499,7 +451,7 @@ class PdfService {
       child: pw.Container(
         padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: pw.BoxDecoration(
-          color: PdfColor.fromHex('#F5F6FB'),
+          color: PdfColor.fromInt(AppPalette.lightBackground),
           borderRadius: pw.BorderRadius.circular(6),
         ),
         child: pw.Column(
@@ -509,7 +461,7 @@ class PdfService {
               titulo,
               style: const pw.TextStyle(
                 fontSize: 8,
-                color: PdfColor.fromInt(0xFF6B7280),
+                color: PdfColor.fromInt(AppPalette.lightTextMuted),
               ),
             ),
             pw.SizedBox(height: 2),
@@ -518,7 +470,7 @@ class PdfService {
               style: pw.TextStyle(
                 fontSize: 13,
                 fontWeight: pw.FontWeight.bold,
-                color: PdfColor.fromHex('#1F2430'),
+                color: PdfColor.fromInt(AppPalette.lightText),
               ),
             ),
           ],
@@ -533,7 +485,7 @@ class PdfService {
     required Turma turma,
     required int indiceAluno,
   }) async {
-    final bytes = await gerarBoletim(
+    final bytes = await gerarBoletimSemestral(
       professor: professor,
       turma: turma,
       indiceAluno: indiceAluno,
@@ -541,24 +493,6 @@ class PdfService {
 
     final aluno = turma.alunos[indiceAluno];
     final nomeArquivo = 'boletim_${_slug(aluno.nome)}.pdf';
-
-    await ArquivoService.salvarBytes(nomeArquivo: nomeArquivo, bytes: bytes);
-  }
-
-  // Salva o relatório da turma para download/compartilhamento.
-  static Future<void> exportarRelatorioTurma({
-    required Professor professor,
-    required Turma turma,
-    required Bimestre bimestre,
-  }) async {
-    final bytes = await gerarRelatorioTurma(
-      professor: professor,
-      turma: turma,
-      bimestre: bimestre,
-    );
-
-    final nomeArquivo =
-        'relatorio_${_slug(turma.nome)}_bimestre_${bimestre.numero}.pdf';
 
     await ArquivoService.salvarBytes(nomeArquivo: nomeArquivo, bytes: bytes);
   }

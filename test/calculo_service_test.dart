@@ -2,175 +2,137 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:projeto_diario/models/bimestre.dart';
 import 'package:projeto_diario/services/calculo_service.dart';
 
+import 'support/fixtures.dart';
+
 void main() {
-  group('CalculoService', () {
-    late Bimestre bimestre;
-
-    setUp(() {
-      bimestre = Bimestre(numero: 1, quantidadeAlunos: 3);
-    });
-
-    test('média das provas fica pendente até as duas notas serem lançadas', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-
-      expect(CalculoService.calcularMediaProvas(bimestre, 0), isNull);
-
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 6);
-
-      expect(CalculoService.calcularMediaProvas(bimestre, 0), 7);
-    });
-
-    test('média usa todas as avaliações personalizadas', () {
-      final Bimestre comTres = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova', 'Trabalho', 'Teste'],
-      );
-
-      comTres.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-      comTres.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 6);
-
-      // A média fica pendente enquanto o teste não for lançado.
-      expect(CalculoService.calcularMediaProvas(comTres, 0), isNull);
-
-      comTres.registrarNota(indiceAluno: 0, avaliacao: 3, nota: 10);
-
-      expect(CalculoService.calcularMediaProvas(comTres, 0), 8);
-    });
-
-    test('média final usa apenas as provas quando atinge a média mínima', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 8);
-      bimestre.registrarRecuperacao(indiceAluno: 0, nota: 10);
-
-      expect(CalculoService.calcularMedia(bimestre, 0), 8);
-      expect(CalculoService.recuperacaoAplicada(bimestre, 0), isFalse);
-    });
-
-    test('média final aplica a recuperação quando fica abaixo da mínima', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 4);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 5);
-      bimestre.registrarRecuperacao(indiceAluno: 0, nota: 9);
-
-      // (4 + 5) / 2 = 4,5 e (4,5 + 9) / 2 = 6,75
-      expect(CalculoService.calcularMedia(bimestre, 0), 6.75);
-      expect(CalculoService.recuperacaoAplicada(bimestre, 0), isTrue);
-    });
-
-    test('média mínima configurável altera a aplicação da recuperação', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 6);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 7);
-      bimestre.registrarRecuperacao(indiceAluno: 0, nota: 10);
-
-      // Com média mínima 7,0 a recuperação é aplicada: (6,5 + 10) / 2.
-      expect(CalculoService.calcularMedia(bimestre, 0), 8.25);
-
-      // Com média mínima 6,0 a média das provas já basta.
-      expect(CalculoService.calcularMedia(bimestre, 0, mediaMinima: 6), 6.5);
-    });
-
-    test('situação do aluno considera a média mínima informada', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 6);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 7);
-
-      expect(CalculoService.verificarSituacao(bimestre, 0), 'Abaixo da média');
-      expect(
-        CalculoService.verificarSituacao(bimestre, 0, mediaMinima: 6),
-        'Aprovado',
-      );
-    });
-
-    test('calcula a nota necessária na recuperação', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 4);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 5);
-
-      expect(CalculoService.notaNecessariaRecuperacao(bimestre, 0), 9.5);
-    });
-
-    test('nota necessária é nula quando as provas já atingem a média', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 7);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 8);
-
-      expect(CalculoService.notaNecessariaRecuperacao(bimestre, 0), isNull);
-    });
-
-    test('nota necessária pode ultrapassar 10 quando é inalcançável', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 0);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 0);
-
-      expect(CalculoService.notaNecessariaRecuperacao(bimestre, 0), 14);
-    });
-
-    test('média geral e percentual de aprovados ignoram pendentes', () {
-      // Aluno 0: aprovado, média 8.
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 8);
-
-      // Aluno 1: abaixo da média, média 4.
-      bimestre.registrarNota(indiceAluno: 1, avaliacao: 1, nota: 4);
-      bimestre.registrarNota(indiceAluno: 1, avaliacao: 2, nota: 4);
-
-      // Aluno 2: pendente.
-
-      expect(CalculoService.calcularMediaGeral(bimestre), 6);
-      expect(CalculoService.calcularPercentualAprovados(bimestre), 50);
-    });
-
-    test('maior e menor nota consideram recuperações lançadas', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 6);
-      bimestre.registrarRecuperacao(indiceAluno: 0, nota: 9);
-      bimestre.registrarNota(indiceAluno: 1, avaliacao: 1, nota: 3);
-
-      expect(CalculoService.obterMaiorNotaLancada(bimestre), 9);
-      expect(CalculoService.obterMenorNotaLancada(bimestre), 3);
-    });
-
-    test('pendências listam avaliações não lançadas', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-
-      expect(CalculoService.pendenciasDoAluno(bimestre, 0), ['Prova 2']);
-    });
-
-    test('pendências incluem a recuperação necessária', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 4);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 5);
-
-      expect(CalculoService.pendenciasDoAluno(bimestre, 0), ['Recuperação']);
-    });
-
-    test('pendências não incluem recuperação já lançada', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 4);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 5);
-      bimestre.registrarRecuperacao(indiceAluno: 0, nota: 9);
-
-      expect(CalculoService.pendenciasDoAluno(bimestre, 0), isEmpty);
-    });
-
-    test('pendências respeitam a média mínima configurada', () {
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 6);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 7);
-
-      expect(CalculoService.pendenciasDoAluno(bimestre, 0), ['Recuperação']);
-      expect(
-        CalculoService.pendenciasDoAluno(bimestre, 0, mediaMinima: 6),
-        isEmpty,
-      );
-    });
-
-    test('pendências usam os nomes personalizados das avaliações', () {
-      final Bimestre comTres = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova', 'Trabalho', 'Teste'],
-      );
-
-      comTres.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-
-      expect(CalculoService.pendenciasDoAluno(comTres, 0), [
-        'Trabalho',
-        'Teste',
-      ]);
-    });
+  test('média semestral aguarda ambas as provas, inclusive nota zero', () {
+    final t = criarProfessor().turmas.single;
+    t.primeiroBimestre.registrarNota(indiceAluno: 0, nota: 0);
+    expect(
+      CalculoService.calcularMediaSemestral(
+        t.primeiroBimestre,
+        t.segundoBimestre,
+        0,
+      ),
+      isNull,
+    );
+    t.segundoBimestre.registrarNota(indiceAluno: 0, nota: 10);
+    expect(
+      CalculoService.calcularMediaSemestral(
+        t.primeiroBimestre,
+        t.segundoBimestre,
+        0,
+      ),
+      5,
+    );
   });
+
+  test('fronteira de aprovação e dispensa de prova final', () {
+    expect(CalculoService.situacaoDasNotas(7, null), 'Aprovado');
+    expect(CalculoService.resultadoDasNotas(7, 0), 7);
+    expect(CalculoService.situacaoDasNotas(6.99, null), 'Prova final pendente');
+    expect(CalculoService.situacaoDasNotas(null, null), 'Pendente');
+  });
+
+  test('resultado após final respeita média configurada', () {
+    expect(CalculoService.resultadoDasNotas(6, 8), 7);
+    expect(CalculoService.situacaoDasNotas(6, 8), 'Aprovado após final');
+    expect(CalculoService.situacaoDasNotas(6, 7), 'Reprovado');
+    expect(
+      CalculoService.situacaoDasNotas(6, null, mediaMinima: 6),
+      'Aprovado',
+    );
+    expect(CalculoService.resultadoDasNotas(0, null, mediaMinima: 0), 0);
+    expect(CalculoService.resultadoDasNotas(9, 10, mediaMinima: 10), 9.5);
+  });
+
+  test(
+    'prova final só pode ser registrada com duas provas abaixo da mínima',
+    () {
+      final t = criarProfessor().turmas.single;
+      final b1 = t.primeiroBimestre;
+      final b2 = t.segundoBimestre;
+      expect(
+        () => CalculoService.registrarProvaFinal(b1, b2, 0, 10),
+        throwsStateError,
+      );
+      b1.registrarNota(indiceAluno: 0, nota: 8);
+      b2.registrarNota(indiceAluno: 0, nota: 8);
+      expect(
+        () => CalculoService.registrarProvaFinal(b1, b2, 0, 10),
+        throwsStateError,
+      );
+      b1.registrarNota(indiceAluno: 0, nota: 4);
+      b2.registrarNota(indiceAluno: 0, nota: 5);
+      expect(CalculoService.notaNecessariaProvaFinal(b1, b2, 0), 9.5);
+      CalculoService.registrarProvaFinal(b1, b2, 0, 9.5);
+      expect(CalculoService.calcularMediaFinalSemestral(b1, b2, 0), 7);
+      expect(
+        CalculoService.verificarSituacaoSemestral(b1, b2, 0),
+        'Aprovado após final',
+      );
+      CalculoService.limparProvaFinal(b2, 0);
+      expect(
+        CalculoService.verificarSituacaoSemestral(b1, b2, 0),
+        'Prova final pendente',
+      );
+    },
+  );
+
+  test(
+    'nota necessária pode superar dez e pendências usam nomes personalizados',
+    () {
+      final t = criarProfessor().turmas.single;
+      final b1 = t.primeiroBimestre;
+      final b2 = t.segundoBimestre;
+      b1.renomearProva('Projeto');
+      expect(CalculoService.pendenciasSemestrais(b1, b2, 0), [
+        'Projeto',
+        'Prova 2',
+      ]);
+      b1.registrarNota(indiceAluno: 0, nota: 0);
+      b2.registrarNota(indiceAluno: 0, nota: 0);
+      expect(CalculoService.notaNecessariaProvaFinal(b1, b2, 0), 14);
+      expect(CalculoService.pendenciasSemestrais(b1, b2, 0), ['Prova final']);
+    },
+  );
+
+  test(
+    'rejeita semestre invertido, alunos inválidos e média mínima inválida',
+    () {
+      final t = criarProfessor().turmas.single;
+      expect(
+        () => CalculoService.calcularMediaSemestral(
+          t.segundoBimestre,
+          t.primeiroBimestre,
+          0,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => CalculoService.calcularMediaSemestral(
+          t.primeiroBimestre,
+          t.segundoBimestre,
+          1,
+        ),
+        throwsRangeError,
+      );
+      for (final minima in [-1.0, 11.0, double.nan]) {
+        expect(
+          () => CalculoService.resultadoDasNotas(7, null, mediaMinima: minima),
+          throwsArgumentError,
+        );
+      }
+      expect(
+        () => CalculoService.mediaDasNotas(double.infinity, 7),
+        throwsArgumentError,
+      );
+      final outro = Bimestre(numero: 2, quantidadeAlunos: 0);
+      expect(
+        () =>
+            CalculoService.calcularMediaSemestral(t.primeiroBimestre, outro, 0),
+        throwsArgumentError,
+      );
+    },
+  );
 }

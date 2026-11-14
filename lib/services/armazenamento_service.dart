@@ -7,385 +7,383 @@ import '../models/bimestre.dart';
 import '../models/professor.dart';
 import '../models/registro_presenca.dart';
 import '../models/turma.dart';
+import 'calculo_service.dart';
 
+/// Armazenamento exclusivo do sistema semestral.
 class ArmazenamentoService {
-  static const String _chave = 'diario_classe_dados_v1';
-  static const int _versaoAtual = 3;
+  static const String chaveDados = 'diario_classe_semestral_v1';
+  static const int versaoAtual = 5;
+  static bool _cargaFalhou = false;
+  static bool _emAlteracao = false;
 
-  // Criado sob demanda para que cada operação use a plataforma atual.
   static SharedPreferencesAsync get _preferences => SharedPreferencesAsync();
 
-  // Salva todos os dados do professor em JSON.
+  static Future<String?> obterJsonSalvo() => _preferences.getString(chaveDados);
+
   static Future<void> salvarProfessor(Professor professor) async {
-    await _preferences.setString(_chave, exportarJson(professor));
+    if (_cargaFalhou) {
+      throw StateError(
+        'Recupere os dados ou inicie um novo diário antes de salvar.',
+      );
+    }
+    await _gravar(professor);
   }
 
-  // Salva e devolve uma mensagem de erro, quando houver.
-  // Assim as telas podem avisar o usuário sem interromper o app.
-  static Future<String?> tentarSalvarProfessor(Professor professor) async {
+  static Future<void> _gravar(Professor professor) async {
+    final json = exportarJson(professor);
+    // Valida também alterações feitas diretamente nos modelos antes de persistir.
+    importarJson(json);
+    await _preferences.setString(chaveDados, json);
+  }
+
+  /// Restaura os valores e as mesmas referências se a alteração ou a gravação falhar.
+  static Future<void> alterarProfessor(
+    Professor professor,
+    void Function() alterar,
+  ) async {
+    if (_emAlteracao) throw StateError('Aguarde o salvamento em andamento.');
+    if (_cargaFalhou) {
+      throw StateError('Os dados precisam ser recuperados antes de editar.');
+    }
+    _emAlteracao = true;
+    final reverter = _capturarProfessor(professor);
     try {
+      alterar();
+      for (final turma in professor.turmas) {
+        for (int i = 0; i < turma.alunos.length; i++) {
+          if (!CalculoService.precisaProvaFinal(
+            turma.primeiroBimestre,
+            turma.segundoBimestre,
+            i,
+            mediaMinima: professor.mediaMinima,
+          )) {
+            turma.segundoBimestre.limparProvaFinal(i);
+          }
+        }
+      }
       await salvarProfessor(professor);
-      return null;
-    } catch (erro) {
-      return 'Não foi possível salvar os dados: $erro';
+    } catch (_) {
+      reverter();
+      rethrow;
+    } finally {
+      _emAlteracao = false;
     }
   }
 
-  // Gera o JSON completo, usado tanto no armazenamento quanto no backup.
-  static String exportarJson(Professor professor) {
-    return jsonEncode(_professorParaJson(professor));
-  }
-
-  // Reconstrói um professor a partir de um JSON de backup.
-  static Professor importarJson(String json) {
-    final dynamic dados = jsonDecode(json);
-
-    if (dados is! Map) {
-      throw const FormatException('O arquivo não contém um objeto JSON.');
-    }
-
-    final Map<String, dynamic> mapa = Map<String, dynamic>.from(dados);
-
-    if (mapa['turmas'] is! List) {
-      throw const FormatException(
-        'O arquivo não parece ser um backup do Diário de Classe.',
-      );
-    }
-
-    return _professorDeJson(mapa);
-  }
-
-  // Carrega os dados salvos.
-  static Future<Professor> carregarProfessor() async {
-    final String? jsonSalvo = await _preferences.getString(_chave);
-
-    // Primeiro acesso: cria um professor vazio.
-    if (jsonSalvo == null) {
-      return Professor(nome: 'Professor');
-    }
-
+  /// Uma restauração só troca os objetos em memória depois que a gravação termina.
+  static Future<void> substituirProfessor(
+    Professor atual,
+    Professor novo,
+  ) async {
+    if (_emAlteracao) throw StateError('Aguarde o salvamento em andamento.');
+    _emAlteracao = true;
     try {
-      return importarJson(jsonSalvo);
-    } catch (erro) {
-      throw FormatException(
-        'Não foi possível recuperar os dados salvos: $erro',
-      );
+      await _gravar(novo);
+      atual.substituirPor(novo);
+      _cargaFalhou = false;
+    } finally {
+      _emAlteracao = false;
     }
   }
 
-  // Converte o professor para uma estrutura JSON.
-  static Map<String, dynamic> _professorParaJson(Professor professor) {
-    return {
-      'versao': _versaoAtual,
-      'nome': professor.nome,
-      'mediaMinima': professor.mediaMinima,
-
-      'turmas': professor.turmas.map((turma) {
-        return {
-          'nome': turma.nome,
-          'curso': turma.curso,
-          'periodo': turma.periodo,
-          'arquivada': turma.arquivada,
-
-          'alunos': turma.alunos.map((aluno) {
-            return {
-              'nome': aluno.nome,
-              'matricula': aluno.matricula,
-              'observacao': aluno.observacao,
-            };
-          }).toList(),
-
-          'presencas': turma.presencas.map((registro) {
-            return {'data': registro.data, 'presentes': registro.presentes};
-          }).toList(),
-
-          'bimestres': turma.bimestres.map((bimestre) {
-            return {
-              'numero': bimestre.numero,
-              'avaliacoes': bimestre.avaliacoes,
-              'notas': bimestre.notas,
-              'notasLancadas': bimestre.notasLancadas,
-              'recuperacoes': bimestre.recuperacoes,
-            };
-          }).toList(),
-        };
-      }).toList(),
-    };
-  }
-
-  // Reconstrói o professor e todos os seus dados.
-  static Professor _professorDeJson(Map<String, dynamic> dados) {
-    final double mediaMinima = _converterMediaMinima(dados['mediaMinima']);
-
-    final professor = Professor(
-      nome: dados['nome']?.toString() ?? 'Professor',
-      mediaMinima: mediaMinima,
-    );
-
-    final turmasJson = dados['turmas'];
-
-    if (turmasJson is! List) {
+  static Future<Professor> carregarProfessor() async {
+    try {
+      final salvo = await obterJsonSalvo();
+      final professor = salvo == null
+          ? Professor(nome: 'Professor')
+          : importarJson(salvo);
+      _cargaFalhou = false;
       return professor;
-    }
-
-    for (final turmaItem in turmasJson) {
-      if (turmaItem is! Map) continue;
-
-      final turmaDados = Map<String, dynamic>.from(turmaItem);
-
-      final turma = Turma(
-        nome: turmaDados['nome']?.toString() ?? '',
-        curso: turmaDados['curso']?.toString() ?? '',
-        periodo: _converterInt(turmaDados['periodo']),
-        arquivada: turmaDados['arquivada'] == true,
+    } catch (erro) {
+      _cargaFalhou = true;
+      throw FormatException(
+        'Não foi possível recuperar o diário semestral: $erro',
       );
+    }
+  }
 
-      // Recupera os alunos antes dos bimestres.
-      // Isso mantém as linhas da matriz alinhadas.
-      final alunosJson = turmaDados['alunos'];
+  static String exportarJson(Professor professor) => jsonEncode({
+    'sistema': 'semestral',
+    'versao': versaoAtual,
+    'nome': professor.nome,
+    'mediaMinima': professor.mediaMinima,
+    'turmas': professor.turmas
+        .map(
+          (turma) => {
+            'nome': turma.nome,
+            'curso': turma.curso,
+            'periodo': turma.periodo,
+            'arquivada': turma.arquivada,
+            'alunos': turma.alunos
+                .map(
+                  (aluno) => {
+                    'nome': aluno.nome,
+                    'matricula': aluno.matricula,
+                    'observacao': aluno.observacao,
+                  },
+                )
+                .toList(),
+            'presencas': turma.presencas
+                .map(
+                  (registro) => {
+                    'data': registro.data,
+                    'presentes': registro.presentes,
+                  },
+                )
+                .toList(),
+            'bimestres': turma.bimestres
+                .map(
+                  (bimestre) => {
+                    'numero': bimestre.numero,
+                    'nomeProva': bimestre.nomeProva,
+                    'notas': bimestre.notas,
+                    if (bimestre.numero == 2)
+                      'provasFinais': bimestre.provasFinais,
+                  },
+                )
+                .toList(),
+          },
+        )
+        .toList(),
+  });
 
-      if (alunosJson is List) {
-        for (final alunoItem in alunosJson) {
-          if (alunoItem is! Map) continue;
-
-          final alunoDados = Map<String, dynamic>.from(alunoItem);
-
+  static Professor importarJson(String json) {
+    try {
+      final dados = _mapa(jsonDecode(json));
+      if (dados['sistema'] != 'semestral' || dados['versao'] != versaoAtual) {
+        throw const FormatException(
+          'Use um backup do sistema semestral atual. Backups antigos não são aceitos.',
+        );
+      }
+      final professor = Professor(
+        nome: _texto(dados['nome']),
+        mediaMinima: _nota(dados['mediaMinima']),
+      );
+      for (final item in _lista(dados['turmas'])) {
+        final dadosTurma = _mapa(item);
+        final periodo = dadosTurma['periodo'];
+        if (periodo is! int) throw const FormatException('Período inválido.');
+        final turma = Turma(
+          nome: _texto(dadosTurma['nome']),
+          curso: _texto(dadosTurma['curso']),
+          periodo: periodo,
+          arquivada: _booleano(dadosTurma['arquivada']),
+        );
+        for (final itemAluno in _lista(dadosTurma['alunos'])) {
+          final aluno = _mapa(itemAluno);
           turma.adicionarAluno(
             Aluno(
-              nome: alunoDados['nome']?.toString() ?? '',
-              matricula: alunoDados['matricula']?.toString() ?? '',
-              observacao: alunoDados['observacao']?.toString() ?? '',
+              nome: _texto(aluno['nome']),
+              matricula: _texto(aluno['matricula']),
+              observacao: _texto(aluno['observacao'], permitirVazio: true),
             ),
           );
         }
-      }
-
-      // Recupera as presenças.
-      final presencasJson = turmaDados['presencas'];
-
-      if (presencasJson is List) {
-        final datasAdicionadas = <String>{};
-
-        for (final presencaItem in presencasJson) {
-          if (presencaItem is! Map) continue;
-
-          final dadosPresenca = Map<String, dynamic>.from(presencaItem);
-          final data = dadosPresenca['data']?.toString() ?? '';
-
-          if (data.isEmpty || !datasAdicionadas.add(data)) continue;
-
-          final presentesJson = dadosPresenca['presentes'];
-          final presentes = List<bool>.generate(turma.alunos.length, (i) {
-            if (presentesJson is List && i < presentesJson.length) {
-              return presentesJson[i] == true;
-            }
-
-            return true;
-          });
-
-          turma.presencas.add(
-            RegistroPresenca(data: data, presentes: presentes),
+        final bimestres = _lista(dadosTurma['bimestres']);
+        if (bimestres.length != 2) {
+          throw const FormatException(
+            'O semestre deve ter exatamente dois bimestres.',
           );
         }
-
-        turma.presencas.sort((a, b) => a.data.compareTo(b.data));
-      }
-
-      // Recupera os bimestres.
-      final bimestresJson = turmaDados['bimestres'];
-
-      if (bimestresJson is List) {
-        for (final bimestreItem in bimestresJson) {
-          if (bimestreItem is! Map) continue;
-
-          final dadosBimestre = Map<String, dynamic>.from(bimestreItem);
-
-          final numero = _converterInt(dadosBimestre['numero']);
-
-          final List<String>? avaliacoes = _converterAvaliacoes(
-            dadosBimestre['avaliacoes'],
-            quantidadeNotas: _quantidadeAvaliacoes(dadosBimestre['notas']),
-          );
-
-          turma.adicionarBimestre(numero, avaliacoes: avaliacoes);
-
-          final Bimestre bimestre = turma.bimestres.firstWhere(
-            (b) => b.numero == numero,
-          );
-
-          final notasJson = dadosBimestre['notas'];
-          final lancadasJson = dadosBimestre['notasLancadas'];
-
-          final recuperacoesJson = dadosBimestre['recuperacoes'];
-
-          // Recupera as notas de todas as avaliações do bimestre.
-          if (notasJson is List && lancadasJson is List) {
-            for (int i = 0; i < turma.alunos.length; i++) {
-              if (i >= notasJson.length || i >= lancadasJson.length) {
-                continue;
-              }
-
-              final linhaNotas = notasJson[i];
-              final linhaLancamentos = lancadasJson[i];
-
-              if (linhaNotas is! List || linhaLancamentos is! List) {
-                continue;
-              }
-
-              for (int j = 0; j < bimestre.avaliacoes.length; j++) {
-                if (j >= linhaNotas.length || j >= linhaLancamentos.length) {
-                  continue;
-                }
-
-                final foiLancada = linhaLancamentos[j] == true;
-
-                if (!foiLancada) continue;
-
-                final nota = _converterDouble(linhaNotas[j]);
-
-                bimestre.registrarNota(
+        final numeros = <int>{};
+        for (final itemBimestre in bimestres) {
+          final dadosBimestre = _mapa(itemBimestre);
+          final numero = dadosBimestre['numero'];
+          if ((numero != 1 && numero != 2) || !numeros.add(numero as int)) {
+            throw const FormatException('Bimestres inválidos ou repetidos.');
+          }
+          if (dadosBimestre.containsKey('avaliacoes') ||
+              dadosBimestre.containsKey('recuperacoes') ||
+              dadosBimestre.containsKey('notasLancadas')) {
+            throw const FormatException(
+              'O formato de avaliações por bimestre foi descontinuado.',
+            );
+          }
+          final bimestre = turma.bimestres[numero - 1];
+          bimestre.renomearProva(_texto(dadosBimestre['nomeProva']));
+          final notas = _lista(dadosBimestre['notas']);
+          if (notas.length != turma.alunos.length) {
+            throw const FormatException('Notas desalinhadas com os alunos.');
+          }
+          for (int i = 0; i < notas.length; i++) {
+            if (notas[i] != null) {
+              bimestre.registrarNota(indiceAluno: i, nota: _nota(notas[i]));
+            }
+          }
+          if (numero == 1 && dadosBimestre.containsKey('provasFinais')) {
+            throw const FormatException(
+              'A prova final pertence somente ao segundo bimestre.',
+            );
+          }
+          if (numero == 2) {
+            final finais = _lista(dadosBimestre['provasFinais']);
+            if (finais.length != turma.alunos.length) {
+              throw const FormatException('Provas finais desalinhadas.');
+            }
+            for (int i = 0; i < finais.length; i++) {
+              if (finais[i] != null) {
+                bimestre.registrarProvaFinal(
                   indiceAluno: i,
-                  avaliacao: j + 1,
-                  nota: nota,
+                  nota: _nota(finais[i]),
                 );
               }
             }
           }
-
-          // Recupera as notas de recuperação.
-          if (recuperacoesJson is List) {
-            for (
-              int i = 0;
-              i < turma.alunos.length && i < recuperacoesJson.length;
-              i++
-            ) {
-              final valor = recuperacoesJson[i];
-
-              if (valor == null) continue;
-
-              bimestre.registrarRecuperacao(
-                indiceAluno: i,
-                nota: _converterDouble(valor),
-              );
-            }
+        }
+        for (int i = 0; i < turma.alunos.length; i++) {
+          if (turma.segundoBimestre.provasFinais[i] != null &&
+              !CalculoService.precisaProvaFinal(
+                turma.primeiroBimestre,
+                turma.segundoBimestre,
+                i,
+                mediaMinima: professor.mediaMinima,
+              )) {
+            throw const FormatException(
+              'Prova final registrada para aluno dispensado ou com provas pendentes.',
+            );
           }
         }
-      }
-
-      professor.adicionarTurma(turma);
-    }
-
-    return professor;
-  }
-
-  // Conta quantas colunas de notas um bimestre antigo possui.
-  // Isso permite reconstruir avaliações além das duas provas padrão.
-  static int _quantidadeAvaliacoes(dynamic notasJson) {
-    if (notasJson is List && notasJson.isNotEmpty) {
-      final primeiraLinha = notasJson.first;
-
-      if (primeiraLinha is List && primeiraLinha.isNotEmpty) {
-        final quantidade = primeiraLinha.length;
-
-        if (quantidade > 0) {
-          return quantidade > Bimestre.limiteAvaliacoes
-              ? Bimestre.limiteAvaliacoes
-              : quantidade;
+        final datas = <String>{};
+        for (final itemPresenca in _lista(dadosTurma['presencas'])) {
+          final presenca = _mapa(itemPresenca);
+          final data = _texto(presenca['data']);
+          final dataConvertida = DateTime.tryParse(data);
+          if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(data) ||
+              dataConvertida == null ||
+              RegistroPresenca.dataParaIso(dataConvertida) != data ||
+              !datas.add(data)) {
+            throw const FormatException('Data de aula inválida ou repetida.');
+          }
+          final presentes = _lista(presenca['presentes']);
+          if (presentes.length != turma.alunos.length) {
+            throw const FormatException('Presenças desalinhadas.');
+          }
+          turma.presencas.add(
+            RegistroPresenca(
+              data: data,
+              presentes: presentes.map(_booleano).toList(),
+            ),
+          );
         }
+        turma.presencas.sort((a, b) => a.data.compareTo(b.data));
+        professor.adicionarTurma(turma);
       }
+      return professor;
+    } on FormatException {
+      rethrow;
+    } catch (erro) {
+      throw FormatException('Backup semestral inválido: $erro');
     }
-
-    return Bimestre.nomesAvaliacoesPadrao.length;
   }
 
-  // Lê os nomes das avaliações com segurança. Backups antigos não possuem
-  // esse campo e continuam usando "Prova 1" e "Prova 2".
-  static List<String>? _converterAvaliacoes(
-    dynamic valor, {
-    required int quantidadeNotas,
-  }) {
+  static Map<String, dynamic> _mapa(dynamic valor) {
+    if (valor is! Map) throw const FormatException('Objeto JSON inválido.');
+    return Map<String, dynamic>.from(valor);
+  }
+
+  static List<dynamic> _lista(dynamic valor) {
     if (valor is! List) {
-      return _avaliacoesPadrao(quantidadeNotas);
+      throw const FormatException('Lista ausente ou inválida.');
     }
+    return valor;
+  }
 
-    final List<String> nomes = [];
-    final Set<String> vistos = {};
+  static String _texto(dynamic valor, {bool permitirVazio = false}) {
+    if (valor is! String || (!permitirVazio && valor.trim().isEmpty)) {
+      throw const FormatException('Texto ausente ou inválido.');
+    }
+    return valor;
+  }
 
-    for (final item in valor) {
-      final String nome = item?.toString().trim() ?? '';
+  static bool _booleano(dynamic valor) {
+    if (valor is! bool) {
+      throw const FormatException('Presença ou arquivamento inválido.');
+    }
+    return valor;
+  }
 
-      if (nome.isEmpty || nome.length > Bimestre.limiteCaracteresNome) {
-        continue;
+  static double _nota(dynamic valor) {
+    if (valor is! num) throw const FormatException('Nota ausente ou inválida.');
+    final nota = valor.toDouble();
+    Bimestre.validarNota(nota);
+    return nota;
+  }
+
+  static void Function() _capturarProfessor(Professor professor) {
+    final nome = professor.nome;
+    final minima = professor.mediaMinima;
+    final turmas = List<Turma>.from(professor.turmas);
+    final restaurarTurmas = turmas.map(_capturarTurma).toList();
+    return () {
+      professor.nome = nome;
+      professor.mediaMinima = minima;
+      professor.turmas
+        ..clear()
+        ..addAll(turmas);
+      for (final restaurar in restaurarTurmas) {
+        restaurar();
       }
+    };
+  }
 
-      if (!vistos.add(nome.toLowerCase())) {
-        continue;
+  static void Function() _capturarTurma(Turma turma) {
+    final nome = turma.nome;
+    final curso = turma.curso;
+    final periodo = turma.periodo;
+    final arquivada = turma.arquivada;
+    final alunos = List<Aluno>.from(turma.alunos);
+    final dadosAlunos = alunos
+        .map(
+          (a) =>
+              (nome: a.nome, matricula: a.matricula, observacao: a.observacao),
+        )
+        .toList();
+    final dadosBimestres = turma.bimestres
+        .map(
+          (b) => (
+            nome: b.nomeProva,
+            notas: List<double?>.from(b.notas),
+            finais: List<double?>.from(b.provasFinais),
+          ),
+        )
+        .toList();
+    final presencas = List<RegistroPresenca>.from(turma.presencas);
+    final dadosPresencas = presencas
+        .map((p) => List<bool>.from(p.presentes))
+        .toList();
+    return () {
+      turma
+        ..nome = nome
+        ..curso = curso
+        ..periodo = periodo
+        ..arquivada = arquivada;
+      turma.alunos
+        ..clear()
+        ..addAll(alunos);
+      for (int i = 0; i < alunos.length; i++) {
+        alunos[i]
+          ..nome = dadosAlunos[i].nome
+          ..matricula = dadosAlunos[i].matricula
+          ..observacao = dadosAlunos[i].observacao;
       }
-
-      nomes.add(nome);
-
-      if (nomes.length >= Bimestre.limiteAvaliacoes) {
-        break;
+      for (int i = 0; i < turma.bimestres.length; i++) {
+        final bimestre = turma.bimestres[i];
+        bimestre.renomearProva(dadosBimestres[i].nome);
+        bimestre.notas
+          ..clear()
+          ..addAll(dadosBimestres[i].notas);
+        bimestre.provasFinais
+          ..clear()
+          ..addAll(dadosBimestres[i].finais);
       }
-    }
-
-    return nomes.isEmpty ? _avaliacoesPadrao(quantidadeNotas) : nomes;
-  }
-
-  static List<String> _avaliacoesPadrao(int quantidade) {
-    if (quantidade == Bimestre.nomesAvaliacoesPadrao.length) {
-      return List<String>.from(Bimestre.nomesAvaliacoesPadrao);
-    }
-
-    final limite = quantidade < 1
-        ? 1
-        : (quantidade > Bimestre.limiteAvaliacoes
-              ? Bimestre.limiteAvaliacoes
-              : quantidade);
-
-    return List<String>.generate(limite, (indice) => 'Avaliação ${indice + 1}');
-  }
-
-  // Converte valores numéricos para inteiro.
-  static int _converterInt(dynamic valor) {
-    if (valor is num) {
-      return valor.toInt();
-    }
-
-    return int.parse(valor.toString());
-  }
-
-  // Converte valores numéricos para double, aceitando vírgula decimal.
-  static double _converterDouble(dynamic valor) {
-    if (valor is num) {
-      return valor.toDouble();
-    }
-
-    return double.parse(valor.toString().trim().replaceAll(',', '.'));
-  }
-
-  // Lê a média mínima com segurança; dados antigos não possuem o campo.
-  static double _converterMediaMinima(dynamic valor) {
-    if (valor == null) {
-      return 7.0;
-    }
-
-    try {
-      final double media = _converterDouble(valor);
-
-      if (!media.isFinite || media < 0 || media > 10) {
-        return 7.0;
+      turma.presencas
+        ..clear()
+        ..addAll(presencas);
+      for (int i = 0; i < presencas.length; i++) {
+        presencas[i].presentes
+          ..clear()
+          ..addAll(dadosPresencas[i]);
       }
-
-      return media;
-    } catch (_) {
-      return 7.0;
-    }
-  }
-
-  // Remove os dados salvos.
-  // Utilizar somente quando for necessário limpar o cadastro.
-  static Future<void> apagarDados() async {
-    await _preferences.remove(_chave);
+    };
   }
 }

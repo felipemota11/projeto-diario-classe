@@ -47,11 +47,11 @@ class _AppCardState extends State<AppCard> {
     final BorderRadius forma = BorderRadius.circular(widget.radius);
 
     // No tema escuro, uma borda sutil ajuda a separar o cartão do fundo.
-    final BoxBorder? borda =
+    final BoxBorder borda =
         widget.border ??
-        (tema.brightness == Brightness.dark && widget.gradient == null
-            ? Border.all(color: scheme.outlineVariant.withValues(alpha: 0.18))
-            : null);
+        (widget.gradient != null
+            ? Border.all(color: AppTheme.brandGreen.withValues(alpha: 0.40))
+            : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.50)));
 
     final Widget cartao = Material(
       color: Colors.transparent,

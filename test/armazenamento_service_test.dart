@@ -3,139 +3,237 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:projeto_diario/models/aluno.dart';
 import 'package:projeto_diario/models/professor.dart';
-import 'package:projeto_diario/models/turma.dart';
 import 'package:projeto_diario/services/armazenamento_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
+
+import 'support/fixtures.dart';
 
 void main() {
-  group('ArmazenamentoService', () {
-    test('exporta e importa todos os dados preservando o conteúdo', () {
-      final professor = Professor(nome: 'Maria', mediaMinima: 6.5);
-      final turma = Turma(nome: 'Turma A', curso: 'Computação', periodo: 2);
-
-      turma.adicionarAluno(
-        Aluno(nome: 'Ana', matricula: '001', observacao: 'Bom desempenho'),
-      );
-      turma.adicionarAluno(Aluno(nome: 'Bruno', matricula: '002'));
-      turma.adicionarBimestre(
-        1,
-        avaliacoes: const ['Prova', 'Trabalho', 'Teste'],
-      );
-      turma.bimestres.single.registrarNota(
-        indiceAluno: 0,
-        avaliacao: 1,
-        nota: 8,
-      );
-      turma.bimestres.single.registrarNota(
-        indiceAluno: 0,
-        avaliacao: 2,
-        nota: 6,
-      );
-      turma.bimestres.single.registrarNota(
-        indiceAluno: 0,
-        avaliacao: 3,
-        nota: 9,
-      );
-      turma.bimestres.single.registrarRecuperacao(indiceAluno: 0, nota: 9);
-      turma.adicionarPresenca('2026-11-10');
-      turma.alternarPresenca(registro: 0, aluno: 0);
-      turma.arquivada = true;
-
-      professor.adicionarTurma(turma);
-
-      final String json = ArmazenamentoService.exportarJson(professor);
-      final Professor restaurado = ArmazenamentoService.importarJson(json);
-
-      expect(restaurado.nome, 'Maria');
-      expect(restaurado.mediaMinima, 6.5);
-      expect(restaurado.turmas, hasLength(1));
-
-      final Turma turmaRestaurada = restaurado.turmas.single;
-
-      expect(turmaRestaurada.nome, 'Turma A');
-      expect(turmaRestaurada.curso, 'Computação');
-      expect(turmaRestaurada.periodo, 2);
-      expect(turmaRestaurada.arquivada, isTrue);
-      expect(turmaRestaurada.alunos, hasLength(2));
-      expect(turmaRestaurada.alunos.first.observacao, 'Bom desempenho');
-      expect(turmaRestaurada.bimestres, hasLength(1));
-      expect(turmaRestaurada.bimestres.single.avaliacoes, [
-        'Prova',
-        'Trabalho',
-        'Teste',
-      ]);
-      expect(turmaRestaurada.bimestres.single.notas[0][0], 8);
-      expect(turmaRestaurada.bimestres.single.notas[0][1], 6);
-      expect(turmaRestaurada.bimestres.single.notas[0][2], 9);
-      expect(turmaRestaurada.bimestres.single.recuperacoes[0], 9);
-      expect(turmaRestaurada.presencas, hasLength(1));
-      expect(turmaRestaurada.presencas.single.data, '2026-11-10');
-      expect(turmaRestaurada.presencas.single.presentes, [false, true]);
-    });
-
-    test('carrega dados antigos aplicando os novos campos padrão', () {
-      final String jsonAntigo = jsonEncode({
-        'nome': 'Professor Antigo',
-        'turmas': [
-          {
-            'nome': 'Turma Antiga',
-            'curso': 'Curso',
-            'periodo': 1,
-            'alunos': [
-              {'nome': 'Aluno', 'matricula': '123'},
-            ],
-            'bimestres': [
-              {
-                'numero': 1,
-                'notas': [
-                  [7.0, 8.0],
-                ],
-                'notasLancadas': [
-                  [true, true],
-                ],
-                'recuperacoes': [null],
-              },
-            ],
-          },
-        ],
-      });
-
-      final Professor professor = ArmazenamentoService.importarJson(jsonAntigo);
-
-      expect(professor.mediaMinima, 7.0);
-      expect(professor.turmas.single.arquivada, isFalse);
-      expect(professor.turmas.single.alunos.single.observacao, '');
-      expect(professor.turmas.single.presencas, isEmpty);
-      expect(professor.turmas.single.bimestres.single.avaliacoes, [
-        'Prova 1',
-        'Prova 2',
-      ]);
-      expect(professor.turmas.single.bimestres.single.notas[0][1], 8);
-    });
-
-    test('rejeita conteúdo que não seja um objeto JSON', () {
-      expect(
-        () => ArmazenamentoService.importarJson('[]'),
-        throwsFormatException,
-      );
-    });
-
-    test('rejeita JSON sem a lista de turmas', () {
-      expect(
-        () => ArmazenamentoService.importarJson('{"nome":"Professor"}'),
-        throwsFormatException,
-      );
-    });
-
-    test('rejeita média mínima inválida e assume o padrão', () {
-      final String json = jsonEncode({
-        'nome': 'Professor',
-        'mediaMinima': 20,
-        'turmas': <dynamic>[],
-      });
-
-      final Professor professor = ArmazenamentoService.importarJson(json);
-
-      expect(professor.mediaMinima, 7.0);
-    });
+  late ArmazenamentoDeTeste plataforma;
+  setUp(() async {
+    plataforma = ArmazenamentoDeTeste();
+    SharedPreferencesAsyncPlatform.instance = plataforma;
+    await ArmazenamentoService.carregarProfessor();
   });
+
+  test(
+    'salva e carrega nomes das provas, notas, perfil, frequência e arquivo',
+    () async {
+      final p = criarProfessor(mediaMinima: 6.25);
+      final t = p.turmas.single;
+      t.primeiroBimestre.renomearProva('Projeto prático');
+      t.primeiroBimestre.registrarNota(indiceAluno: 0, nota: 4);
+      t.segundoBimestre.registrarNota(indiceAluno: 0, nota: 5);
+      t.segundoBimestre.registrarProvaFinal(indiceAluno: 0, nota: 8);
+      t.adicionarPresenca('2026-11-10');
+      t.alternarPresenca(registro: 0, aluno: 0);
+      t.arquivada = true;
+      await ArmazenamentoService.salvarProfessor(p);
+      final carregado = await ArmazenamentoService.carregarProfessor();
+      expect(
+        ArmazenamentoService.exportarJson(carregado),
+        ArmazenamentoService.exportarJson(p),
+      );
+      expect(
+        carregado.turmas.single.primeiroBimestre.nomeProva,
+        'Projeto prático',
+      );
+      expect(carregado.turmas.single.alunos.single.observacao, 'Participativo');
+    },
+  );
+
+  test('ignora armazenamento antigo e recusa seus backups', () async {
+    final preferencias = SharedPreferencesAsync();
+    const antigo = '{"versao":3,"nome":"Antigo","turmas":[]}';
+    await preferencias.setString('diario_classe_dados_v1', antigo);
+    final p = await ArmazenamentoService.carregarProfessor();
+    expect(p.turmas, isEmpty);
+    expect(
+      () => ArmazenamentoService.importarJson(antigo),
+      throwsFormatException,
+    );
+    await ArmazenamentoService.salvarProfessor(p);
+    expect(await preferencias.getString('diario_classe_dados_v1'), antigo);
+    final dados = jsonDecode((await ArmazenamentoService.obterJsonSalvo())!);
+    expect(dados['sistema'], 'semestral');
+    expect(dados['versao'], ArmazenamentoService.versaoAtual);
+  });
+
+  test(
+    'dados inválidos bloqueiam gravação até recuperação explícita',
+    () async {
+      final preferencias = SharedPreferencesAsync();
+      await preferencias.setString(
+        ArmazenamentoService.chaveDados,
+        'corrompido',
+      );
+      await expectLater(
+        ArmazenamentoService.carregarProfessor(),
+        throwsFormatException,
+      );
+      final p = Professor(nome: 'Professor');
+      await expectLater(
+        ArmazenamentoService.salvarProfessor(p),
+        throwsStateError,
+      );
+      await expectLater(
+        ArmazenamentoService.alterarProfessor(p, () => p.nome = 'Outro'),
+        throwsStateError,
+      );
+      expect(await ArmazenamentoService.obterJsonSalvo(), 'corrompido');
+      final novo = criarProfessor();
+      await ArmazenamentoService.substituirProfessor(p, novo);
+      expect(
+        (await ArmazenamentoService.carregarProfessor()).turmas,
+        hasLength(1),
+      );
+    },
+  );
+
+  test('rejeita versões desconhecidas, matrizes antigas e desalinhamentos', () {
+    for (final alterar in <void Function(Map<String, dynamic>)>[
+      (d) => d['turmas'][0]['alunos'][0]['nome'] = 'Aluno123',
+      (d) => d['turmas'][0]['alunos'][0]['matricula'] = 'ABC',
+      (d) => d['versao'] = 99,
+      (d) => d['turmas'][0]['bimestres'] = [],
+      (d) => d['turmas'][0]['bimestres'][0]['notas'] = [
+        [8, 9],
+      ],
+      (d) => d['turmas'][0]['bimestres'][0]['notas'] = [],
+      (d) => d['turmas'][0]['bimestres'][0]['avaliacoes'] = ['A', 'B'],
+      (d) => d['turmas'][0]['bimestres'][0]['provasFinais'] = [8],
+      (d) => d['turmas'][0]['bimestres'][1]['provasFinais'] = [8],
+      (d) => d['turmas'][0]['alunos'].add(null),
+      (d) => d['turmas'][0]['presencas'] = [
+        {
+          'data': '2026-02-30',
+          'presentes': [true],
+        },
+      ],
+      (d) => d['mediaMinima'] = 20,
+    ]) {
+      final dados = jsonDecode(
+        ArmazenamentoService.exportarJson(criarProfessor()),
+      ) as Map<String, dynamic>;
+      alterar(dados);
+      expect(
+        () => ArmazenamentoService.importarJson(jsonEncode(dados)),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test(
+    'falha de gravação restaura objetos e permite repetir o lançamento',
+    () async {
+      final p = criarProfessor();
+      final t = p.turmas.single;
+      final aluno = t.alunos.single;
+      final b1 = t.primeiroBimestre;
+      final b2 = t.segundoBimestre;
+      final aula = t.adicionarPresenca('2026-11-10');
+      await ArmazenamentoService.salvarProfessor(p);
+      final antes = await ArmazenamentoService.obterJsonSalvo();
+      plataforma.falhar = true;
+      await expectLater(
+        ArmazenamentoService.alterarProfessor(p, () {
+          p.editarPerfil(nome: 'Outro', mediaMinima: 6);
+          t.editar(nome: 'Outra', curso: 'Outro', periodo: 3);
+          t.arquivada = true;
+          t.editarAluno(0, nome: 'Novo', matricula: '003', observacao: 'Outra');
+          b1.renomearProva('Outra prova');
+          b1.registrarNota(indiceAluno: 0, nota: 6);
+          b2.registrarNota(indiceAluno: 0, nota: 6);
+          t.alternarPresenca(registro: 0, aluno: 0);
+          t.adicionarAluno(Aluno(nome: 'Extra', matricula: '002'));
+        }),
+        throwsStateError,
+      );
+      expect(identical(p.turmas.single, t), isTrue);
+      expect(identical(t.alunos.single, aluno), isTrue);
+      expect(identical(t.primeiroBimestre, b1), isTrue);
+      expect(identical(t.presencas.single, aula), isTrue);
+      expect(ArmazenamentoService.exportarJson(p), antes);
+      plataforma.falhar = false;
+      await ArmazenamentoService.alterarProfessor(p, () {
+        b1.registrarNota(indiceAluno: 0, nota: 6);
+        b2.registrarNota(indiceAluno: 0, nota: 6);
+        b2.registrarProvaFinal(indiceAluno: 0, nota: 8);
+      });
+      expect(
+        (await ArmazenamentoService.carregarProfessor())
+            .turmas
+            .single
+            .segundoBimestre
+            .provasFinais,
+        [8],
+      );
+    },
+  );
+
+  test(
+    'falha de exclusão devolve aluno, notas e turma nas referências originais',
+    () async {
+      final p = criarProfessor();
+      final t = p.turmas.single;
+      final a = t.alunos.single;
+      plataforma.falhar = true;
+      await expectLater(
+        ArmazenamentoService.alterarProfessor(p, () {
+          t.removerAlunoNoIndice(0);
+          p.turmas.remove(t);
+        }),
+        throwsStateError,
+      );
+      expect(identical(p.turmas.single, t), isTrue);
+      expect(identical(t.alunos.single, a), isTrue);
+      expect(t.primeiroBimestre.notas, [null]);
+    },
+  );
+
+  test('restauração mal sucedida mantém o cadastro atual', () async {
+    final p = criarProfessor();
+    final t = p.turmas.single;
+    await ArmazenamentoService.salvarProfessor(p);
+    plataforma.falhar = true;
+    await expectLater(
+      ArmazenamentoService.substituirProfessor(p, Professor(nome: 'Novo')),
+      throwsStateError,
+    );
+    expect(identical(p.turmas.single, t), isTrue);
+    expect((await ArmazenamentoService.carregarProfessor()).nome, 'Maria');
+  });
+
+  test(
+    'remover prova ou mudar regra elimina final de aluno dispensado',
+    () async {
+      final p = criarProfessor();
+      final t = p.turmas.single;
+      await ArmazenamentoService.alterarProfessor(p, () {
+        t.primeiroBimestre.registrarNota(indiceAluno: 0, nota: 6);
+        t.segundoBimestre.registrarNota(indiceAluno: 0, nota: 6);
+        t.segundoBimestre.registrarProvaFinal(indiceAluno: 0, nota: 8);
+      });
+      await ArmazenamentoService.alterarProfessor(
+        p,
+        () => p.editarPerfil(nome: 'Maria', mediaMinima: 6),
+      );
+      expect(t.segundoBimestre.provasFinais.single, isNull);
+      await ArmazenamentoService.alterarProfessor(
+        p,
+        () => p.editarPerfil(nome: 'Maria', mediaMinima: 7),
+      );
+      expect(t.segundoBimestre.provasFinais.single, isNull);
+      await ArmazenamentoService.alterarProfessor(
+        p,
+        () => t.segundoBimestre.registrarProvaFinal(indiceAluno: 0, nota: 8),
+      );
+      await ArmazenamentoService.alterarProfessor(
+        p,
+        () => t.primeiroBimestre.limparNota(indiceAluno: 0),
+      );
+      expect(t.segundoBimestre.provasFinais.single, isNull);
+    },
+  );
 }

@@ -1,91 +1,38 @@
 import 'package:flutter/material.dart';
 
 import '../models/professor.dart';
-import '../services/armazenamento_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/animated_number.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_icon.dart';
 import '../widgets/app_page_route.dart';
 import '../widgets/app_widgets.dart';
 import '../widgets/fade_slide_in.dart';
 import 'backup_screen.dart';
 import 'notas_screen.dart';
 import 'perfil_screen.dart';
-import 'relatorios_screen.dart';
+import 'relatorio_semestral_screen.dart';
 import 'turmas_screen.dart';
 
 class InicioScreen extends StatefulWidget {
   final Professor professor;
-  final String? erroAoCarregar;
+  final ThemeMode temaSelecionado;
+  final bool salvandoTema;
+  final ValueChanged<ThemeMode> aoAlterarTema;
 
-  const InicioScreen({super.key, required this.professor, this.erroAoCarregar});
+  const InicioScreen({
+    super.key,
+    required this.professor,
+    required this.temaSelecionado,
+    required this.aoAlterarTema,
+    this.salvandoTema = false,
+  });
 
   @override
   State<InicioScreen> createState() => _InicioScreenState();
 }
 
 class _InicioScreenState extends State<InicioScreen> {
-  @override
-  void initState() {
-    super.initState();
-
-    if (widget.erroAoCarregar != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-
-        _mostrarErroCarregamento(widget.erroAoCarregar!);
-      });
-    }
-  }
-
-  // Avisa sobre dados corrompidos e permite limpar o armazenamento.
-  Future<void> _mostrarErroCarregamento(String mensagem) async {
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Dados não puderam ser carregados'),
-          content: SingleChildScrollView(child: Text(mensagem)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Fechar'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  await ArmazenamentoService.apagarDados();
-                } catch (erro) {
-                  if (!dialogContext.mounted) return;
-
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(
-                      content: Text('Não foi possível limpar os dados: $erro'),
-                    ),
-                  );
-
-                  return;
-                }
-
-                if (!dialogContext.mounted) return;
-
-                Navigator.pop(dialogContext);
-
-                if (!mounted) return;
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Dados inválidos removidos.')),
-                );
-              },
-              child: const Text('Limpar dados inválidos'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   // Abre outra tela e atualiza o painel quando retornar.
   Future<void> _abrirTela(Widget tela) async {
     await Navigator.push<void>(context, AppPageRoute.fadeSlide(tela));
@@ -110,21 +57,39 @@ class _InicioScreenState extends State<InicioScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          PopupMenuButton<ThemeMode>(
+            tooltip: 'Alterar tema',
+            initialValue: widget.temaSelecionado,
+            enabled: !widget.salvandoTema,
+            icon: Icon(switch (widget.temaSelecionado) {
+              ThemeMode.light => Icons.light_mode_outlined,
+              ThemeMode.dark => Icons.dark_mode_outlined,
+              ThemeMode.system => Icons.brightness_auto_outlined,
+            }),
+            onSelected: widget.aoAlterarTema,
+            itemBuilder: (_) => [
+              CheckedPopupMenuItem(
+                value: ThemeMode.light,
+                checked: widget.temaSelecionado == ThemeMode.light,
+                child: const Text('Claro'),
+              ),
+              CheckedPopupMenuItem(
+                value: ThemeMode.dark,
+                checked: widget.temaSelecionado == ThemeMode.dark,
+                child: const Text('Escuro'),
+              ),
+              CheckedPopupMenuItem(
+                value: ThemeMode.system,
+                checked: widget.temaSelecionado == ThemeMode.system,
+                child: const Text('Seguir o sistema'),
+              ),
+            ],
+          ),
+        ],
         title: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: AppTheme.brandGradient,
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: const Icon(
-                Icons.school_rounded,
-                color: Colors.white,
-                size: 19,
-              ),
-            ),
+            const AppIcon(),
             const SizedBox(width: 10),
             const Flexible(
               child: Text(
@@ -191,7 +156,7 @@ class _InicioScreenState extends State<InicioScreen> {
               delay: const Duration(milliseconds: 270),
               child: _AtalhoCard(
                 titulo: 'Lançamento de notas',
-                descricao: 'Registrar avaliações e recuperações.',
+                descricao: 'Lançar Prova 1, Prova 2 e prova final.',
                 icone: Icons.edit_note_rounded,
                 cor: AppTheme.secondary,
                 aoClicar: () {
@@ -208,7 +173,9 @@ class _InicioScreenState extends State<InicioScreen> {
                 icone: Icons.bar_chart_rounded,
                 cor: AppTheme.info,
                 aoClicar: () {
-                  _abrirTela(RelatoriosScreen(professor: widget.professor));
+                  _abrirTela(
+                    RelatorioSemestralScreen(professor: widget.professor),
+                  );
                 },
               ),
             ),
@@ -328,7 +295,9 @@ class _InicioScreenState extends State<InicioScreen> {
               aoClicar: () async {
                 Navigator.pop(context);
 
-                await _abrirTela(RelatoriosScreen(professor: widget.professor));
+                await _abrirTela(
+                  RelatorioSemestralScreen(professor: widget.professor),
+                );
               },
             ),
 
@@ -585,7 +554,9 @@ class _BlocoResumo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData tema = Theme.of(context);
-    final Color destaqueCor = cor ?? AppTheme.primary;
+    final Color destaqueCor = cor == null
+        ? tema.colorScheme.primary
+        : AppTheme.foreground(context, cor!);
 
     return AppCard(
       gradient: destaque ? AppTheme.brandGradient : null,

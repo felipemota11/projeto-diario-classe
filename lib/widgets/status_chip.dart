@@ -22,15 +22,15 @@ class StatusChip extends StatelessWidget {
   /// Cor base de cada situação conhecida pelo aplicativo.
   static Color corPara(String situacao, Brightness brilho) {
     final Color base = switch (situacao) {
-      'Aprovado' => AppTheme.success,
-      'Abaixo da média' || 'Final' => AppTheme.warning,
+      'Aprovado' || 'Aprovado após final' => AppTheme.success,
+      'Prova final pendente' => AppTheme.warning,
       'Reprovado' => AppTheme.danger,
       _ => AppTheme.info,
     };
 
     // No tema escuro clareia o tom para manter o contraste.
     return brilho == Brightness.dark
-        ? Color.lerp(base, Colors.white, 0.32) ?? base
+        ? Color.lerp(base, Colors.white, 0.48) ?? base
         : base;
   }
 

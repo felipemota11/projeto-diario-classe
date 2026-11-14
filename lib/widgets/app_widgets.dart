@@ -83,8 +83,7 @@ class IconBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color cor = color ?? scheme.primary;
+    final Color cor = color ?? AppTheme.primary;
 
     return Container(
       width: size,
@@ -300,7 +299,9 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData tema = Theme.of(context);
-    final Color destaque = cor ?? tema.colorScheme.primary;
+    final Color destaque = cor == null
+        ? tema.colorScheme.primary
+        : AppTheme.foreground(context, cor!);
 
     return AppCard(
       padding: EdgeInsets.all(compacto ? 14 : 18),

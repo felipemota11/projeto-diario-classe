@@ -1,113 +1,94 @@
 import 'package:csv/csv.dart';
 
 import '../models/turma.dart';
-import '../models/bimestre.dart';
 import 'arquivo_service.dart';
 import 'calculo_service.dart';
 
+/// CSV semestral: prova de cada bimestre, prova final e frequência.
 class ExportacaoService {
-  // Formata notas usando vírgula como separador decimal.
-  static String _formatarNota(double? nota) {
-    if (nota == null) {
-      return '';
-    }
+  static String _formatar(double? valor) =>
+      valor == null ? '' : valor.toStringAsFixed(2).replaceAll('.', ',');
 
-    return nota.toStringAsFixed(2).replaceAll('.', ',');
-  }
-
-  // Cria o conteúdo CSV de uma turma e de um bimestre.
-  static String gerarCsv({
+  static String gerarCsvSemestral({
     required String nomeProfessor,
     required Turma turma,
-    required Bimestre bimestre,
     double mediaMinima = CalculoService.mediaMinimaPadrao,
   }) {
+    final semestre = (
+      primeiro: turma.primeiroBimestre,
+      segundo: turma.segundoBimestre,
+    );
+    final primeiro = semestre.primeiro;
+    final segundo = semestre.segundo;
     final linhas = <List<dynamic>>[
       [
         'Professor',
-        'Turma',
         'Curso',
+        'Turma',
         'Período',
-        'Bimestre',
         'Matrícula',
         'Aluno',
-        ...bimestre.avaliacoes,
-        'Média das avaliações',
-        'Recuperação',
+        primeiro.nomeProva,
+        segundo.nomeProva,
+        'Média semestral',
+        'Prova final',
         'Média final',
         'Situação',
+        'Frequência (%)',
       ],
     ];
-
     for (int i = 0; i < turma.alunos.length; i++) {
       final aluno = turma.alunos[i];
-
-      final notas = List<String>.generate(bimestre.avaliacoes.length, (j) {
-        final lancada = bimestre.notasLancadas[i][j];
-
-        return _formatarNota(lancada ? bimestre.notas[i][j] : null);
-      });
-
-      final mediaProvas = CalculoService.calcularMediaProvas(bimestre, i);
-
-      final recuperacao = bimestre.recuperacoes[i];
-
-      final mediaFinal = CalculoService.calcularMedia(
-        bimestre,
+      final media = CalculoService.calcularMediaSemestral(primeiro, segundo, i);
+      final resultado = CalculoService.calcularMediaFinalSemestral(
+        primeiro,
+        segundo,
         i,
         mediaMinima: mediaMinima,
       );
-
-      final situacao = CalculoService.verificarSituacao(
-        bimestre,
-        i,
-        mediaMinima: mediaMinima,
-      );
-
+      final finalNota = media != null && media < mediaMinima
+          ? segundo.provasFinais[i]
+          : null;
       linhas.add([
         nomeProfessor,
-        turma.nome,
         turma.curso,
+        turma.nome,
         turma.periodo,
-        '${bimestre.numero}º',
         aluno.matricula,
         aluno.nome,
-        ...notas,
-        _formatarNota(mediaProvas),
-        _formatarNota(recuperacao),
-        _formatarNota(mediaFinal),
-        situacao,
+        _formatar(primeiro.obterNota(i)),
+        _formatar(segundo.obterNota(i)),
+        _formatar(media),
+        _formatar(finalNota),
+        _formatar(resultado),
+        CalculoService.verificarSituacaoSemestral(
+          primeiro,
+          segundo,
+          i,
+          mediaMinima: mediaMinima,
+        ),
+        _formatar(turma.percentualPresenca(i)),
       ]);
     }
-
-    // Configuração pronta para abrir no Excel.
     return excel.encode(linhas);
   }
 
-  // Gera e disponibiliza o arquivo para download.
-  static Future<void> exportarCsv({
+  static Future<void> exportarCsvSemestral({
     required String nomeProfessor,
     required Turma turma,
-    required Bimestre bimestre,
     double mediaMinima = CalculoService.mediaMinimaPadrao,
   }) async {
-    final conteudo = gerarCsv(
+    final conteudo = gerarCsvSemestral(
       nomeProfessor: nomeProfessor,
       turma: turma,
-      bimestre: bimestre,
       mediaMinima: mediaMinima,
     );
-
-    final nomeTurma = turma.nome.toLowerCase().replaceAll(
+    final nome = turma.nome.toLowerCase().replaceAll(
       RegExp(r'[^a-z0-9_-]'),
       '_',
     );
-
-    final nomeArquivo =
-        'diario_classe_${nomeTurma}_bimestre_${bimestre.numero}.csv';
-
     await ArquivoService.salvarTexto(
-      nomeArquivo: nomeArquivo,
+      nomeArquivo: 'relatorio_semestral_$nome.csv',
       conteudo: conteudo,
     );
   }

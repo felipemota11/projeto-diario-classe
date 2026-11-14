@@ -4,6 +4,7 @@ import '../models/professor.dart';
 import '../models/registro_presenca.dart';
 import '../models/turma.dart';
 import '../services/armazenamento_service.dart';
+import '../widgets/salvar_alteracao.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_widgets.dart';
@@ -48,8 +49,10 @@ class _FrequenciaScreenState extends State<FrequenciaScreen> {
     final String iso = RegistroPresenca.dataParaIso(data);
 
     try {
-      widget.turma.adicionarPresenca(iso);
-      await ArmazenamentoService.salvarProfessor(widget.professor);
+      await ArmazenamentoService.alterarProfessor(
+        widget.professor,
+        () => widget.turma.adicionarPresenca(iso),
+      );
 
       if (!mounted) return;
 
@@ -62,9 +65,13 @@ class _FrequenciaScreenState extends State<FrequenciaScreen> {
   }
 
   Future<void> _alternarPresenca(int registro, int aluno) async {
-    widget.turma.alternarPresenca(registro: registro, aluno: aluno);
-
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => widget.turma.alternarPresenca(registro: registro, aluno: aluno),
+    )) {
+      return;
+    }
 
     if (mounted) setState(() {});
   }
@@ -97,8 +104,13 @@ class _FrequenciaScreenState extends State<FrequenciaScreen> {
 
     final RegistroPresenca removido = widget.turma.presencas[indice];
 
-    widget.turma.removerPresencaNoIndice(indice);
-    await ArmazenamentoService.salvarProfessor(widget.professor);
+    if (!await salvarAlteracao(
+      context,
+      widget.professor,
+      () => widget.turma.removerPresencaNoIndice(indice),
+    )) {
+      return;
+    }
 
     if (!mounted) return;
 
@@ -116,10 +128,12 @@ class _FrequenciaScreenState extends State<FrequenciaScreen> {
           action: SnackBarAction(
             label: 'Desfazer',
             onPressed: () async {
-              widget.turma.presencas.insert(indice, removido);
-              widget.turma.presencas.sort((a, b) => a.data.compareTo(b.data));
-
-              await ArmazenamentoService.salvarProfessor(widget.professor);
+              if (!await salvarAlteracao(context, widget.professor, () {
+                widget.turma.presencas.add(removido);
+                widget.turma.presencas.sort((a, b) => a.data.compareTo(b.data));
+              })) {
+                return;
+              }
 
               if (mounted) setState(() {});
             },
@@ -260,8 +274,8 @@ class _FrequenciaScreenState extends State<FrequenciaScreen> {
                   final Color cor = percentual == null
                       ? tema.colorScheme.outline
                       : risco
-                      ? AppTheme.warning
-                      : AppTheme.success;
+                      ? AppTheme.foreground(context, AppTheme.warning)
+                      : AppTheme.foreground(context, AppTheme.success);
 
                   return Column(
                     children: [
@@ -517,7 +531,7 @@ class _CartaoAula extends StatelessWidget {
                 tooltip: 'Excluir aula',
                 onPressed: aoExcluir,
                 style: IconButton.styleFrom(
-                  foregroundColor: AppTheme.danger,
+                  foregroundColor: tema.colorScheme.error,
                   backgroundColor: AppTheme.danger.withValues(alpha: 0.08),
                 ),
                 icon: const Icon(Icons.delete_outline_rounded, size: 19),
@@ -579,7 +593,10 @@ class _ChipPresenca extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color cor = presente ? AppTheme.success : AppTheme.danger;
+    final Color cor = AppTheme.foreground(
+      context,
+      presente ? AppTheme.success : AppTheme.danger,
+    );
 
     return Material(
       color: cor.withValues(alpha: 0.09),

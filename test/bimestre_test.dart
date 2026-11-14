@@ -2,118 +2,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:projeto_diario/models/bimestre.dart';
 
 void main() {
-  group('Bimestre', () {
-    test('começa com as duas avaliações padrão e estruturas alinhadas', () {
-      final bimestre = Bimestre(numero: 1, quantidadeAlunos: 2);
+  test('cada bimestre possui uma prova e notas pendentes', () {
+    final b = Bimestre(numero: 2, quantidadeAlunos: 2);
+    expect(b.nomeProva, 'Prova 2');
+    expect(b.notas, [null, null]);
+    expect(b.provasFinais, [null, null]);
+  });
 
-      expect(bimestre.avaliacoes, ['Prova 1', 'Prova 2']);
-      expect(bimestre.quantidadeAvaliacoes, 2);
-      expect(bimestre.notas, hasLength(2));
-      expect(bimestre.notasLancadas, hasLength(2));
-      expect(bimestre.notas[0], hasLength(2));
-      expect(bimestre.notasLancadas[0], hasLength(2));
-    });
+  test('zero é nota lançada e limpar volta a pendente', () {
+    final b = Bimestre(numero: 1, quantidadeAlunos: 1);
+    b.registrarNota(indiceAluno: 0, nota: 0);
+    expect(b.obterNota(0), 0);
+    b.limparNota(indiceAluno: 0);
+    expect(b.obterNota(0), isNull);
+  });
 
-    test('adiciona uma avaliação mantendo as notas existentes', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 2,
-        avaliacoes: const ['Prova', 'Trabalho'],
+  test('renomeia a prova preservando notas', () {
+    final b = Bimestre(numero: 1, quantidadeAlunos: 1);
+    b.registrarNota(indiceAluno: 0, nota: 8.75);
+    b.renomearProva('  Trabalho prático  ');
+    expect(b.nomeProva, 'Trabalho prático');
+    expect(b.obterNota(0), 8.75);
+    expect(() => b.renomearProva(' '), throwsArgumentError);
+    expect(() => b.renomearProva('a' * 41), throwsArgumentError);
+  });
+
+  test('rejeita notas inválidas, índices inválidos e terceiro bimestre', () {
+    final b = Bimestre(numero: 1, quantidadeAlunos: 1);
+    for (final nota in [-1.0, 10.01, double.nan, double.infinity]) {
+      expect(
+        () => b.registrarNota(indiceAluno: 0, nota: nota),
+        throwsArgumentError,
       );
+    }
+    expect(() => b.obterNota(1), throwsRangeError);
+    expect(() => Bimestre(numero: 3, quantidadeAlunos: 0), throwsArgumentError);
+    expect(
+      () => Bimestre(numero: 1, quantidadeAlunos: -1),
+      throwsArgumentError,
+    );
+  });
 
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 8);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 6);
-
-      bimestre.adicionarAvaliacao('Teste');
-
-      expect(bimestre.avaliacoes, ['Prova', 'Trabalho', 'Teste']);
-      expect(bimestre.notas[0], [8.0, 6.0, 0.0]);
-      expect(bimestre.notasLancadas[0], [true, true, false]);
-      expect(bimestre.notasLancadas[1], [false, false, false]);
-    });
-
-    test('renomeia a avaliação sem alterar as notas', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova', 'Trabalho'],
-      );
-
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 9);
-      bimestre.renomearAvaliacao(indice: 1, nome: 'Atividade');
-
-      expect(bimestre.avaliacoes, ['Prova', 'Atividade']);
-      expect(bimestre.notas[0][1], 9);
-      expect(bimestre.notasLancadas[0][1], isTrue);
-    });
-
-    test('remove a avaliação e as notas dela', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova', 'Trabalho', 'Teste'],
-      );
-
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 5);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 2, nota: 8);
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 3, nota: 10);
-
-      bimestre.removerAvaliacao(1);
-
-      expect(bimestre.avaliacoes, ['Prova', 'Teste']);
-      expect(bimestre.notas[0], [5.0, 10.0]);
-      expect(bimestre.notasLancadas[0], [true, true]);
-    });
-
-    test('não permite remover a única avaliação', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova'],
-      );
-
-      expect(() => bimestre.removerAvaliacao(0), throwsStateError);
-    });
-
-    test('valida nomes vazios, duplicados e acima do limite', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: const ['Prova'],
-      );
-
-      expect(() => bimestre.adicionarAvaliacao('  '), throwsArgumentError);
-      expect(() => bimestre.adicionarAvaliacao('prova'), throwsArgumentError);
-      expect(() => bimestre.adicionarAvaliacao('a' * 41), throwsArgumentError);
-    });
-
-    test('respeita o limite máximo de avaliações', () {
-      final nomes = List<String>.generate(
-        Bimestre.limiteAvaliacoes,
-        (i) => 'Avaliação ${i + 1}',
-      );
-
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 1,
-        avaliacoes: nomes,
-      );
-
-      expect(() => bimestre.adicionarAvaliacao('Extra'), throwsStateError);
-    });
-
-    test('conta quantas notas foram lançadas por avaliação', () {
-      final bimestre = Bimestre(
-        numero: 1,
-        quantidadeAlunos: 3,
-        avaliacoes: const ['Prova', 'Trabalho'],
-      );
-
-      bimestre.registrarNota(indiceAluno: 0, avaliacao: 1, nota: 7);
-      bimestre.registrarNota(indiceAluno: 2, avaliacao: 1, nota: 9);
-
-      expect(bimestre.quantidadeNotasLancadas(0), 2);
-      expect(bimestre.quantidadeNotasLancadas(1), 0);
-    });
+  test('a prova final pertence exclusivamente ao segundo bimestre', () {
+    final b1 = Bimestre(numero: 1, quantidadeAlunos: 1);
+    final b2 = Bimestre(numero: 2, quantidadeAlunos: 1);
+    expect(
+      () => b1.registrarProvaFinal(indiceAluno: 0, nota: 8),
+      throwsStateError,
+    );
+    expect(() => b1.limparProvaFinal(0), throwsStateError);
+    b2.registrarProvaFinal(indiceAluno: 0, nota: 8);
+    expect(b2.provasFinais.single, 8);
+    b2.limparProvaFinal(0);
+    expect(b2.provasFinais.single, isNull);
   });
 }
