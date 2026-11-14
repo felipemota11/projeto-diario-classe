@@ -3,20 +3,36 @@ import 'package:flutter/material.dart';
 import 'models/professor.dart';
 import 'screens/inicio_screen.dart';
 import 'services/armazenamento_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Recupera os dados salvos no dispositivo.
-  final Professor professor = await ArmazenamentoService.carregarProfessor();
+  Professor professor;
+  String? erroAoCarregar;
 
-  runApp(DiarioClasseApp(professor: professor));
+  // Recupera os dados salvos no dispositivo.
+  try {
+    professor = await ArmazenamentoService.carregarProfessor();
+  } catch (erro) {
+    professor = Professor(nome: 'Professor');
+    erroAoCarregar =
+        'Os dados salvos não puderam ser carregados. '
+        'O aplicativo foi iniciado vazio.\n\n$erro';
+  }
+
+  runApp(DiarioClasseApp(professor: professor, erroAoCarregar: erroAoCarregar));
 }
 
 class DiarioClasseApp extends StatelessWidget {
   final Professor professor;
+  final String? erroAoCarregar;
 
-  const DiarioClasseApp({super.key, required this.professor});
+  const DiarioClasseApp({
+    super.key,
+    required this.professor,
+    this.erroAoCarregar,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +40,13 @@ class DiarioClasseApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Diário de Classe',
 
-      theme: ThemeData(
-        useMaterial3: true,
+      // O aplicativo acompanha o tema claro/escuro do sistema.
+      // Nenhuma tela de configurações é criada: apenas seguimos o aparelho.
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
 
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-      ),
-
-      home: InicioScreen(professor: professor),
+      home: InicioScreen(professor: professor, erroAoCarregar: erroAoCarregar),
     );
   }
 }

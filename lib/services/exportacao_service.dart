@@ -1,8 +1,8 @@
 import 'package:csv/csv.dart';
-import 'package:flutter_file_saver/flutter_file_saver.dart';
 
 import '../models/turma.dart';
 import '../models/bimestre.dart';
+import 'arquivo_service.dart';
 import 'calculo_service.dart';
 
 class ExportacaoService {
@@ -20,6 +20,7 @@ class ExportacaoService {
     required String nomeProfessor,
     required Turma turma,
     required Bimestre bimestre,
+    double mediaMinima = CalculoService.mediaMinimaPadrao,
   }) {
     final linhas = <List<dynamic>>[
       [
@@ -30,9 +31,8 @@ class ExportacaoService {
         'Bimestre',
         'Matrícula',
         'Aluno',
-        'Prova 1',
-        'Prova 2',
-        'Média das provas',
+        ...bimestre.avaliacoes,
+        'Média das avaliações',
         'Recuperação',
         'Média final',
         'Situação',
@@ -42,21 +42,27 @@ class ExportacaoService {
     for (int i = 0; i < turma.alunos.length; i++) {
       final aluno = turma.alunos[i];
 
-      final prova1Lancada = bimestre.notasLancadas[i][0];
+      final notas = List<String>.generate(bimestre.avaliacoes.length, (j) {
+        final lancada = bimestre.notasLancadas[i][j];
 
-      final prova2Lancada = bimestre.notasLancadas[i][1];
-
-      final prova1 = prova1Lancada ? bimestre.notas[i][0] : null;
-
-      final prova2 = prova2Lancada ? bimestre.notas[i][1] : null;
+        return _formatarNota(lancada ? bimestre.notas[i][j] : null);
+      });
 
       final mediaProvas = CalculoService.calcularMediaProvas(bimestre, i);
 
       final recuperacao = bimestre.recuperacoes[i];
 
-      final mediaFinal = CalculoService.calcularMedia(bimestre, i);
+      final mediaFinal = CalculoService.calcularMedia(
+        bimestre,
+        i,
+        mediaMinima: mediaMinima,
+      );
 
-      final situacao = CalculoService.verificarSituacao(bimestre, i);
+      final situacao = CalculoService.verificarSituacao(
+        bimestre,
+        i,
+        mediaMinima: mediaMinima,
+      );
 
       linhas.add([
         nomeProfessor,
@@ -66,8 +72,7 @@ class ExportacaoService {
         '${bimestre.numero}º',
         aluno.matricula,
         aluno.nome,
-        _formatarNota(prova1),
-        _formatarNota(prova2),
+        ...notas,
         _formatarNota(mediaProvas),
         _formatarNota(recuperacao),
         _formatarNota(mediaFinal),
@@ -84,11 +89,13 @@ class ExportacaoService {
     required String nomeProfessor,
     required Turma turma,
     required Bimestre bimestre,
+    double mediaMinima = CalculoService.mediaMinimaPadrao,
   }) async {
     final conteudo = gerarCsv(
       nomeProfessor: nomeProfessor,
       turma: turma,
       bimestre: bimestre,
+      mediaMinima: mediaMinima,
     );
 
     final nomeTurma = turma.nome.toLowerCase().replaceAll(
@@ -99,9 +106,9 @@ class ExportacaoService {
     final nomeArquivo =
         'diario_classe_${nomeTurma}_bimestre_${bimestre.numero}.csv';
 
-    await FlutterFileSaver().writeFileAsString(
-      fileName: nomeArquivo,
-      data: conteudo,
+    await ArquivoService.salvarTexto(
+      nomeArquivo: nomeArquivo,
+      conteudo: conteudo,
     );
   }
 }
