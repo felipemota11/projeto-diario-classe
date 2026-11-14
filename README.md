@@ -35,33 +35,6 @@ Projeto realizado por alunos de Ciência da Computação (IFPA – Campus Tucuru
 - A média mínima para aprovação começa em **7,0** e pode ser alterada em
   **Perfil e regras**.
 
-## Como executar
-
-```bash
-flutter pub get
-flutter run
-```
-
-Para executar no navegador:
-
-```bash
-flutter run -d web-server --web-hostname=127.0.0.1 --web-port=8080
-```
-
-Depois acesse `http://127.0.0.1:8080`.
-
-Para gerar a versão de produção para web:
-
-```bash
-flutter build web
-```
-
-## Testes e análise
-
-```bash
-flutter analyze
-flutter test
-```
 
 ## Estrutura do projeto
 
@@ -96,12 +69,6 @@ lib/
 └── widgets/
 ```
 
-## Observações
-
-- Os dados ficam salvos somente no dispositivo/navegador utilizado.
-- Limpar os dados do navegador ou do aplicativo remove o cadastro.
-- Ao abrir com dados corrompidos, o aplicativo oferece a opção de limpar
-  o armazenamento inválido.
 
 <p align="center">
   <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/flutter/flutter-original.svg" width="120" alt="Flutter" />
